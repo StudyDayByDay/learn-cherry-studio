@@ -10,22 +10,11 @@ next:
 
 # 主进程里的循环
 
-预计 18 分钟。
+`createAgent` 不知道当前是哪个话题，也不知道工具执行前要不要人点允许。这些是产品规则，放在主进程的 `Agent` 类里。这个类把规则收成 `agentSettings`，然后调用上一课的函数。
 
-## 这一坐要看懂什么
-
-`packages/aiCore` 不知道话题、数据库和窗口。主进程的 `Agent` 类补上这些：温度和停止条件、工具执行前后的钩子、把图片类工具结果路由成模型能看的内容，然后调用 `createAgent`。文件头写着：AI SDK 的执行和流的生命周期。
-
-同目录还有一条更窄的路。当 `contextOwner === 'caller'` 时，它不建 `ToolLoopAgent`，而是 `createExecutor` 后直接 `streamText`，并且 `stopWhen: stepCountIs(1)`，只跑一步。那是调用方自己管上下文的场景。普通会调工具的聊天走 `createAgent`。
-
-## 先打开哪个文件
-
-`src/main/ai/runtime/aiSdk/Agent.ts`。先读 import 和 `buildExecution` 末尾的 `return createAgent`。文件大约 500 行，钩子组装可以第二遍再看。
-
-## 关键代码
+## 交给 createAgent 的那一份
 
 ```ts
-// agent/cherry-studio/src/main/ai/runtime/aiSdk/Agent.ts
 return createAgent({
   providerId: params.providerId,
   providerSettings: params.providerSettings,
@@ -37,18 +26,26 @@ return createAgent({
     tools: toolsWithHooks,
     instructions: params.system,
     stopWhen: opts.stopWhen,
+    experimental_repairToolCall: opts.repairToolCall,
     prepareStep
   }
 })
 ```
 
-`prepareStep` 在每一轮模型调用前改消息，例如处理工具结果里的媒体。`toolsWithHooks` 是原工具加上执行期钩子，用来记日志、做审批衔接。系统提示在这里叫 `instructions`。
+`settings` 里是温度、topP、最大输出长度、请求头。这些是一次生成的采样参数。`instructions` 是系统提示，SDK 的 agent 用这个字段，不叫 `system`。`stopWhen` 决定循环什么时候停，例如达到步数上限，避免工具来回调用停不下来。
 
-## 记住这一点
+`toolsWithHooks` 是业务工具加上执行期钩子。工具真正 `execute` 的前后可以记日志、接审批。工具的名字和参数 schema 没变，包了一层。
 
-读到 `createAgent` 的那个 return，这条产品循环就接到了上一课。再往上是 `AiStreamManager` 何时 new 这个 Agent，再往下是 SDK 的 `ToolLoopAgent`。
+`prepareStep` 在每一轮模型调用之前跑。它查看即将送出的消息，把工具结果里的图片、音频整理成当前模型能接受的形状。有的模型能看图，有的只能看文字。这一步在循环的每一轮都发生，和插件的 `transformParams` 不同：后者默认只在创建 agent 时走一遍。
 
-## 先不要展开的目录
+## 还有一条只跑一步的路
 
-- `runtime/aiSdk/loop/` 里的终止条件和钩子包装。出了「工具失败却停不下来」再进。
-- `runtime/aiSdk/retry/`。换 key、换模型重试是产品策略，循环本身不依赖你先读懂它。
+当上下文的主人是调用方自己（`contextOwner === 'caller'`）时，这个类不建 `ToolLoopAgent`。它 `createExecutor` 之后直接 `streamText`，并且 `stopWhen: stepCountIs(1)`。模型最多产出一步。调用方要自己把工具结果拼回历史再来一次。普通会搜网页、会连续调用工具的聊天，走上面的 `createAgent`。
+
+`generate` 方法在此之上再分 `'generate' | 'stream'`。流式时还可以传 `onTextDelta`，在整段结束之前就把文本增量交出去。窗口路径不依赖这个回调，它消费的是调度台转出去的 chunk。这个回调给的是「不经过聊天气泡、但也想边生成边拿字」的内部调用。
+
+## 接下来
+
+工具在 `toolsWithHooks` 里被循环调用。看一个具体的工具长什么样：[一个小工具](/model/one-tool)。
+
+源码：`src/main/ai/runtime/aiSdk/Agent.ts` 的 `buildExecution`。

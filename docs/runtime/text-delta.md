@@ -10,31 +10,19 @@ next:
 
 # 文本增量
 
-预计 15 分钟。
+如果每次增量都把整条助手消息重新发一遍，观察者和界面要比对全文才能知道多了哪几个字。契约改成对「已知的某一块」做编辑。文本和思考只用三种编辑。
 
-## 这一坐要看懂什么
-
-外部运行时不会按 Cherry 的组件来吐字。适配器把原生事件收成对某一个 part 的编辑。文本和推理过程用三种编辑：
-
-| 编辑 | 含义 |
-| --- | --- |
-| `open` | 开始一块新的正文或推理 |
-| `append` | 往这块上追加字符串 |
-| `finish` | 这块写完了 |
-
-`correct` 是整块替换，`put` 用来放文件或工具 part。纯文本的 open/append/finish 可以拆成更细的事件再推给观察者。
-
-## 先打开哪个文件
-
-`packages/agent-runtime/src/textPartUpdates.ts`。全文大约 50 行。对照 README 里 `message.parts` 那一段。
-
-## 关键代码
+## open、append、finish
 
 ```ts
-// agent/cherry-studio/packages/agent-runtime/src/textPartUpdates.ts
 switch (edit.type) {
   case 'open':
-    updates.push({ type: 'message.text-open', ref, part, kind: edit.kind })
+    updates.push({
+      type: 'message.text-open',
+      ref,
+      part,
+      kind: edit.kind
+    })
     break
   case 'append':
     updates.push({ type: 'message.text-append', ref, part, text: edit.text })
@@ -48,13 +36,14 @@ switch (edit.type) {
 }
 ```
 
-`ref` 指向哪一条消息的哪一个 part。界面上的流式正文，就是这些 append 叠出来的。`correct` 和 `put` 不走这条纯文本捷径，调用方保留原来的整批 `message.parts`。
+`ref` 指向哪一条消息。`part` 是这块在消息里的位置。`open` 开始一块新的正文或推理，`kind` 区分两者。`append` 带上这一小段 `text`，接收方把它接到那一块的末尾。`finish` 表示这块写完，界面可以收起光标、按完整 Markdown 渲染。
 
-## 记住这一点
+一组编辑如果全是这三种，函数返回细粒度事件，观察者可以逐条应用。一旦出现 `correct` 或 `put`，函数返回 `undefined`。`correct` 是整块替换，发生在原生源修订了已经写过的文本时。`put` 用来放文件或工具 part。这两种不适合拆成「追加字符串」，调用方保留原来的整批 `message.parts`，按一批来应用。
 
-流式协议在契约层是「对已知 part 位置的有序编辑」，不是把整段回复反复覆盖成一个新字符串。
+这和聊天流里的 `text-delta` 是同一类想法。聊天那边的 delta 由 AI SDK 的 chunk 表达，编码助手这边由契约里的 append 表达。窗口最后看到的都是某个 text part 的 `text` 变长了。
 
-## 先不要展开的目录
+## 接下来
 
-- `messageStream.ts` 和 `observation.ts`。它们处理观察者排队和溢出，等你要改「丢更新」时再读。
-- `immutable.ts`。它保证发出去的对象被冻结，避免一个听众改数据影响到另一个。
+工具 part 有时不能马上执行，要等用户点允许。[工具审批认门](/runtime/approval) 把这道门的两端对上。
+
+源码：`packages/agent-runtime/src/textPartUpdates.ts`。

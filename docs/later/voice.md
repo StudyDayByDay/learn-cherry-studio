@@ -10,33 +10,20 @@ next:
 
 # 语音
 
-预计 10 分钟。认门，不往下读。
+语音是同一条对话的另一种出入口。麦克风把话说成文本，文本仍走输入框那条发送链。回复除了画在气泡里，还可以读出来。模型和工具循环不用知道音频从哪来。
 
-## 这一坐要看懂什么
+## 两条实现，一个会话入口
 
-语音是聊天旁边的一条能力：听写和朗读。模型目录里每个语音模型带一组操作，`execution.ts` 按操作去调。本地引擎（系统语音、FunASR、Qwen、Kokoro 等）在 `localAdapters/`。会话入口是 `src/main/ai/voice/VoiceSessionService.ts`。
+本地引擎和云端 API 是并列的。
 
-它使用主进程甚至独立的 utility process 来解码音频，所以不在渲染进程里直接跑。
+本地适配器在 `src/main/ai/voice/localAdapters/`。模型定义带一组操作，`execution.ts` 按操作选择。系统语音、FunASR、Qwen、Kokoro 各自一份适配器。音频解码放在名为 `voice.audio` 的 utility process 里，由 `VoiceSessionService` 注册。网页里录到的常常是 WebM，这些引擎要的是 WAV，所以只有 WebM 才额外解码。取消用 AbortSignal 传进整个解码过程，避免用户松手之后进程还在转码。
 
-## 先打开哪个文件
+云端语音回到 `aiCore` 的 `runtime/voice.ts`，本质仍是「一个配好的 provider 调用语音接口」。密钥留在主进程，和聊天模型同一套设置。
 
-`src/main/ai/voice/localAdapters/README.md` 的前 20 行。
+界面负责采集和播放。识别出的文本交回输入框或直接成为一条用户消息。之后的路径就是这门课前半段已经走过的：IPC、调度台、模型、parts。
 
-## 关键代码
+## 接下来
 
-README 里的分工可以记成三句：
+最后一页是定时。它容易和「让 agent 过一会儿再跑」混在一起。[定时](/later/schedule) 把钟和到点之后的事情分开。
 
-- 模型定义提供操作表，执行层按表选择。
-- `voiceAudioProcess` 声明名为 `voice.audio` 的 utility process，由 `VoiceSessionService` 注册。
-- Apple、FunASR、Qwen3-ASR、Windows 识别走规范的 WAV；WebM 才额外解码。
-
-云端语音则回到 `aiCore` 的语音 runtime：`packages/aiCore/src/core/runtime/voice.ts`。那是「用厂商 API 做语音」的一条，和本地适配器并列。
-
-## 记住这一点
-
-语音有本地适配器和云端 API 两条。两条都由主进程的会话服务收口，界面只负责采集和播放。
-
-## 先不要展开的目录
-
-- `localAdapters/` 里每个引擎的实现和测试。
-- `native/system-speech`。那是系统语音的原生模块。
+源码：`src/main/ai/voice/localAdapters/README.md`，会话服务是 `VoiceSessionService.ts`。

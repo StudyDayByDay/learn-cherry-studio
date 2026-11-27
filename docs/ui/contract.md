@@ -10,20 +10,13 @@ next:
 
 # 列表契约
 
-预计 15 分钟。
+首页、Agent 会话、历史记录都要画聊天气泡。如果每个页面复制一套列表，流式更新和虚拟滚动会修三遍。Cherry 把列表做成共享组件，页面只交一个对象进去。
 
-## 这一坐要看懂什么
+## 三块，没有页面开关
 
-首页、Agent 会话、历史记录共用同一套消息组件。页面差异通过一个对象注入，组件内部只读这个对象。形状固定为三块：`state` 是可渲染的数据，`actions` 是按钮能做的事，`meta` 是头像、导出文件名这类环境信息。
-
-## 先打开哪个文件
-
-`src/renderer/components/chat/messages/README.md`，然后看 `types.ts` 里这三个接口。
-
-## 关键代码
+这个对象的形状是固定的：
 
 ```ts
-// agent/cherry-studio/src/renderer/components/chat/messages/types.ts
 export interface MessageListProviderValue {
   state: MessageListState
   actions: MessageListActions
@@ -31,7 +24,11 @@ export interface MessageListProviderValue {
 }
 ```
 
-`state` 里和主线相关的字段：
+`state` 是画得出来的数据。一条话题、消息数组、每条消息的 parts。`actions` 是用户能做的事，比如向上加载更早的消息、删除、重新生成。某个页面没有删除，就不要传 `deleteMessage`，按钮自己不出现。组件内部不写 `if (isHome)`。
+
+`meta` 是环境信息，不改变消息本身。助手头像、导出图片时用的文件名，放在这里。
+
+和流式有关的字段在 `state` 里：
 
 ```ts
 export interface MessageListState {
@@ -39,7 +36,6 @@ export interface MessageListState {
   messages: MessageListItem[]
   partsByMessageId: MessagePartRows
   streamingLayers?: MessageStreamingLayers
-  // ...
 }
 
 export interface MessageStreamingLayers {
@@ -48,13 +44,23 @@ export interface MessageStreamingLayers {
 }
 ```
 
-历史 parts 和正在流式的消息 id 分开。这样打字时不用把整段历史消息树重新渲染一遍。
+`messages` 是有哪些气泡。`partsByMessageId` 是每个气泡里面的块：正文、思考、工具卡片。历史 parts 和「正在生成的那几条消息 id」分开，打字时只更新活着的那几条，不用把上面几十条历史消息的子树全部重渲染。
 
-## 记住这一点
+想象这一轮回复的 id 是 `m2`：
 
-共享组件里没有 `isHome`、`isAgent` 这种页面开关。某个按钮在这个页面不存在，就表现为 `actions` 里的那个函数缺失。
+```text
+historyPartsByMessageId: { m1: [已经写完的正文] }
+liveMessageIds: ['m2']
+```
 
-## 先不要展开的目录
+`m2` 的正文还在变。`m1` 的 React 节点保持不动。
 
-- `types.ts` 剩下的四百多行。需要某个按钮时再搜函数名。
-- `utils/` 下的分组、选区、诊断。它们服务列表行为，不服务模型协议。
+## 页面只负责填这个对象
+
+共享组件从 Context 读这三块。首页有一个适配器把它填满，Agent 页有另一个。两边的按钮集合可以不同，列表组件是同一份。后面会看到首页适配器怎么填。
+
+## 接下来
+
+列表拿到这份数据之后画什么、不画什么，看 [MessageList 画什么](/ui/message-list)。
+
+源码：`src/renderer/components/chat/messages/types.ts` 里的这三个接口。

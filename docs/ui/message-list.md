@@ -10,22 +10,13 @@ next:
 
 # MessageList 画什么
 
-预计 15 分钟。
+`MessageList` 是滚动容器，不是聊天空。它从上一课的 Context 取出数据，决定哪些行挂载、滚到哪、多选时画框。它不调用模型，也没有输入框。
 
-## 这一坐要看懂什么
+## 它一进来就做的事
 
-`MessageList` 是列表编排：虚拟滚动、向上翻历史、多选、搜索、把每一行交给分组组件。它从 Provider 取 `state / actions / meta`，自己不发请求。
-
-输入框不在这个目录。消息目录的 README 写明了它不拥有 composer、导航和侧栏。
-
-## 先打开哪个文件
-
-`src/renderer/components/chat/messages/MessageList.tsx` 里组件开头那几十行。文件后半是滚动和导出，这一坐跳过。
-
-## 关键代码
+组件开头只做取数：
 
 ```tsx
-// agent/cherry-studio/src/renderer/components/chat/messages/MessageList.tsx
 const MessageList = ({ enableSearch = false, scrollPositionKey }: MessageListProps) => {
   const data = useMessageListData()
   const actions = useMessageListActions()
@@ -36,13 +27,18 @@ const MessageList = ({ enableSearch = false, scrollPositionKey }: MessageListPro
 }
 ```
 
-列表行的虚拟滚动在同目录的 `list/MessageVirtualList.tsx`。长对话靠它只挂载可见行。
+`data` 就是 `state`。`messages` 是行，`hasOlder` 决定滚到顶时还要不要再要一页历史。`actions.loadOlder` 由页面提供，列表滚到顶就调用它。`partsByMessageId` 另走一份 Context，因为 parts 更新很频繁，和头像、选中态拆开，避免整表一起变。
 
-## 记住这一点
+长对话不能把一万行都挂到 DOM 上。同目录的 `MessageVirtualList` 只挂载视口附近的行，滚出屏幕的行卸掉，高度用估算值撑住滚动条。这是前端里常见的虚拟列表，这里用在消息上。
 
-打开 `MessageList.tsx` 时，先看它从哪些 hook 取数据。数据从哪来是适配器的事，下一课的 Home 适配器会接上。
+`enableSearch` 和 `scrollPositionKey` 是列表自己的开关：要不要搜索框，滚动位置记在哪个 key 下。话题内容不从 props 钻进来，仍从 Context 来。这样首页和 Agent 页可以写 `<MessageList />`，差异留在适配器里。
 
-## 先不要展开的目录
+## 输入框在旁边
 
-- 同文件 200 行之后的滚动恢复、导出图片、多选框。
-- `list/` 里除了 `MessageVirtualList.tsx` 以外的选区和锚点。
+消息目录明确不管输入框、顶栏和侧栏。输入框是聊天布局里的兄弟节点。两边对齐靠布局 Context 里的右侧留白：列表量出操作栏有多宽，输入框让出同样的宽度。发送逻辑在输入框里，成功之后新消息出现在 `messages` 里，列表才看得到。
+
+## 接下来
+
+每一行里面，头像、正文、底部按钮怎样拼，是 [消息骨架](/ui/frame)。
+
+源码：`src/renderer/components/chat/messages/MessageList.tsx` 开头，虚拟列表在 `list/MessageVirtualList.tsx`。

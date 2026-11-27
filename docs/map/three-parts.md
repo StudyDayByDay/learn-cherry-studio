@@ -10,39 +10,43 @@ next:
 
 # 三块代码
 
-预计 15 分钟。
+网页前端里，React 页面和接口通常是两台机器上的两份程序。Cherry Studio 是 Electron 桌面应用，这两份程序在同一台电脑上，仍然分成两个进程。
 
-## 这一坐要看懂什么
+## 为什么要拆开
 
-Cherry Studio 是 Electron 应用。和你熟悉的网页相比，多了一层「主进程」。代码按职责分成三块，聊天功能横跨这三块。
+渲染进程就是窗口里的 Chromium，跑你熟悉的 React。用户能在开发者工具里看到它。如果模型的 API Key 放在这里，打开调试工具就能读走。文件、数据库、子进程也不该由网页随意碰。
 
-| 位置 | 跑在哪 | 你把它当成什么 |
-| --- | --- | --- |
-| `src/renderer` | 窗口里的 Chromium | 你已经会的 React 界面 |
-| `src/preload` | 窗口和 Node 之间的桥 | 渲染进程能调用的那一层 API |
-| `src/main` | Node 主进程 | 密钥、数据库、模型请求、文件系统 |
-| `packages/*` | 被主进程引用的库 | 可以脱离界面单独读的 TypeScript 包 |
+主进程是 Node。它创建窗口，保管密钥，连接模型，读写 SQLite。窗口里的页面要做事，必须请主进程代劳。
 
-`packages/aiCore` 和 `packages/agent-runtime` 是转型主线。它们不画按钮。
+中间还有一层 preload。它跑在窗口里，但能使用少量 Electron API，负责把「网页可以调用的函数」交到 `window` 上。页面不直接 `import` 主进程的代码。
 
-## 先打开哪个文件
+可以把它想成：
 
-仓库根目录的 `package.json`，看 `"main": "./out/main/main.js"`。入口在主进程，界面是它打开的窗口。
+```text
+渲染进程   React 界面          看得见的气泡、输入框
+preload    一条窄桥            页面发出的请求和订到的事件
+主进程     Node                密钥、数据库、模型请求
+packages   被主进程引用的库    模型调用和 agent 契约，本身不画按钮
+```
 
-## 关键代码
+仓库入口也写在主进程上。根目录 `package.json` 里是：
 
-界面技术可以先认这几个依赖，都在根 `package.json` 里：
+```json
+{
+  "main": "./out/main/main.js"
+}
+```
 
-- `electron`、`electron-vite`：桌面壳和开发服务器
-- `react`、`@tanstack/react-router`：窗口里的页面
-- `ai`、`@ai-sdk/openai` 以及一批 `@ai-sdk/*`：模型调用
-- `@cherrystudio/ai-core`、`@cherrystudio/agent-runtime`：仓库自己的包，用 `workspace:*` 连到 `packages/`
+`electron .` 先启动这个文件，再由它打开窗口，窗口加载渲染进程打出来的页面。
 
-## 记住这一点
+## 和这门课的关系
 
-渲染进程负责画。主进程负责把话发给模型。`packages/` 里的包两边都能被引用，但模型密钥和工具执行留在主进程。
+界面课只待在 `src/renderer`。进程边界课看 preload 怎样把流送回来。模型课看 `packages/aiCore`，以及主进程里把这个包用起来的 `Agent`。`packages` 可以单独读，因为它不依赖窗口。
 
-## 先不要展开的目录
+你在设置页填的 Key 留在主进程。React 组件拿到的是「当前选中的模型 id」，不是密钥本身。
 
-- `src/main/data`：SQLite 和业务表。
-- `src/main/core`：窗口、生命周期、定时器底座。下一课只用名字，不读实现。
+## 接下来
+
+知道三块各自干什么之后，用一句话把它们串起来。[一条消息的全程](/map/one-message) 跟着「今天北京天气怎么样」走一遍，仍然不展开实现细节。
+
+源码位置：仓库根目录 `package.json` 的 `main` 字段。目录就是 `src/renderer`、`src/preload`、`src/main`、`packages`。

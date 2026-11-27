@@ -10,22 +10,11 @@ next:
 
 # 上下文快满了
 
-预计 12 分钟。这一课只认门。
+模型能读的历史有上限。聊了几十轮，再把全部网页搜索结果塞回去，请求会被拒绝，或者默默丢掉前面的内容。压缩做的事是：把较早的消息收成一段摘要，留下最近几轮原文，然后继续。
 
-## 这一坐要看懂什么
-
-模型能读的历史有长度上限。对话变长以后，Cherry 会把较早的消息压成一段摘要，留下最近几轮原文，再继续请求。这件事叫 compaction。实现放在 `packages/aiCore/src/core/context/`，主进程的流调度也会在自己的 `context/compaction.ts` 里决定这一轮要不要压。
-
-界面上对应的块是 `blocks/CompactBlock.tsx` 和 `CompactionAnchorBlock.tsx`。用户能看见「这里曾经压缩过」，压缩算法不必在这一坐读完。
-
-## 先打开哪个文件
-
-`packages/aiCore/src/core/context/compaction.ts` 里 `compactModelMessages` 的签名和它上面的注释。
-
-## 关键代码
+## 压缩的是发给模型的那一份
 
 ```ts
-// agent/cherry-studio/packages/aiCore/src/core/context/compaction.ts
 export async function compactModelMessages(
   messages: ModelMessage[],
   model: LanguageModel,
@@ -37,15 +26,18 @@ export async function compactModelMessages(
 }
 ```
 
-输入输出都是 `ModelMessage[]`，也就是发给模型的那一份，不是界面上的 `UIMessage`。摘要被插成一条 `user` 消息。注释说明这是 Claude Code 的风格，后面的 provider 层会自己处理连续两条 user。
+参数和返回值都是 `ModelMessage[]`，也就是上一课说的「即将发给模型的历史」，不是窗口上那份带折叠状态的 `UIMessage`。窗口里的旧气泡可以还在，用户往上翻仍看得到。变短的是下一次请求带上的副本。
 
-没有变化时函数返回原来的数组引用，调用方可以用 `result === messages` 决定要不要落库。
+`compactHistory` 先决定保留尾巴的哪几轮，再请一个模型把丢掉的部分写成摘要。摘要被插成一条 `user` 消息，这是 Claude Code 的习惯。尾巴如果也以 user 开头，数组里会连续两条 user。AI SDK 的各家适配器会自己处理：Anthropic 把同角色合并，OpenAI 接受这种排列。注释把这件事写明了，避免你看到两条 user 以为是 bug。
 
-## 记住这一点
+没有东西需要压时，`compactHistory` 返回原来的内部表示。函数就返回当初传进来的数组引用。调用方用 `result === messages` 判断要不要写数据库。引用没变，就跳过一次落库。
 
-上下文压缩发生在「发给模型之前」。界面只是事后把这个事实画出来。
+界面上对应的是 `CompactBlock`。它只标记「上面的历史被摘要过」。摘要的正文在发给模型的那条消息里，不一定原样铺在气泡上。
 
-## 先不要展开的目录
+主进程的流调度另有一个 `context/compaction.ts`，决定这一轮聊天线要不要调用上面的函数。算法在 `aiCore`，时机在调度台。这一课把位置认清即可，截断、卸载的邻近文件可以以后再读。
 
-- `context/truncator.ts`、`offloader.ts`、`janitor.ts`。它们是压缩旁边的裁剪和卸载策略。
-- `src/main/ai/streamManager/context/compaction.ts` 和它的测试。那是「这一轮聊天线要不要触发压缩」。
+## 接下来
+
+普通聊天的循环到这里就闭合了。编码助手不走这套 `ToolLoopAgent`，它们有自己的循环。Cherry 用一份契约把它们收成同样的消息：[和 Electron 无关的契约](/runtime/contract)。
+
+源码：`packages/aiCore/src/core/context/compaction.ts` 的 `compactModelMessages`。

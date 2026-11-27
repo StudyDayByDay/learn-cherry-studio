@@ -10,42 +10,48 @@ next:
 
 # 内容块
 
-预计 15 分钟。
+助手的一条回复在数据上不是一个字符串。它是按顺序排好的 parts。渲染器顺着这个数组走，每种类型找自己的组件。中间不再转成另一套 block 对象。
 
-## 这一坐要看懂什么
+## 一条回复长什么样
 
-一条助手消息在数据上是一组 part，按顺序渲染。`MessagePartsRenderer` 按 `part.type` 分发：正文、推理、图片、视频、工具、错误、压缩标记各走各的组件。它不做「先转成另一种 block 再画」的中间层。
+「今天北京天气怎么样」如果模型先想了想、又搜了网页、再回答，parts 会像这样：
 
-## 先打开哪个文件
+```ts
+[
+  { type: 'reasoning', text: '需要实时天气，先搜索。', state: 'done' },
+  { type: 'tool-web_search', state: 'output-available', input: { query: '北京天气' }, output: { /* 结果 */ } },
+  { type: 'text', text: '今天北京多云，12°C。', state: 'done' }
+]
+```
 
-`src/renderer/components/chat/messages/blocks/MessagePartsRenderer.tsx` 开头的注释，以及 `case 'text'` 那一支。文件有两千多行，用类型名搜索，不要从头读。
+类型名来自 Vercel AI SDK 的 `UIMessage`。`text` 是正文，`reasoning` 是思考，工具 part 带着调用参数和结果。界面课先把它们当成可渲染的块，协议细节在后面的模型课。
 
-## 关键代码
+## 分发
 
-文件头说明了分组规则：连续的图片合成一行，连续的工具调用合成 `ToolBlockGroup`，视频按同一文件路径合并。
-
-正文这一支落到 `MainTextBlock`：
+`MessagePartsRenderer` 的文件头写了分组规则：连续的图片合成一行，连续的工具调用放进 `ToolBlockGroup`，同一路径的视频合成一块。单个 part 再按类型进叶子组件。正文这一支是：
 
 ```tsx
-// agent/cherry-studio/src/renderer/components/chat/messages/blocks/MessagePartsRenderer.tsx
 case 'text': {
   return (
     <MainTextBlock
       key={partId}
       id={partId}
-      // ...
+      content={part.text || ''}
+      livePart={isStreaming && message.role === 'assistant' ? part : undefined}
+      isStreaming={isStreaming}
     />
   )
 }
 ```
 
-同目录里和主线有关的叶子：`MainTextBlock.tsx`（正文）、`ThinkingBlock.tsx`（推理）、`ToolBlockGroup.tsx`（工具组）、`ErrorBlock.tsx`（错误）。
+`content` 是当前已经拿到的全文，不是单个 token。流式的时候这段字符串变长，`isStreaming` 为真，`MainTextBlock` 用 `livePart` 知道这块还没写完，可以显示光标或先不解析未闭合的 Markdown。
 
-## 记住这一点
+思考进 `ThinkingBlock`，一组工具进 `ToolBlockGroup`，出错进 `ErrorBlock`。新增一种 part，就是在这个分发里加一个分支，再写一个叶子组件。
 
-界面上的「一条回复」是 part 数组。模型多吐出一种 part，这里就多一个 `case`。
+这个文件有两千多行，因为分组、引用、折叠都在里面。主线只需要记住：顺序来自数组，外观来自 `type`。
 
-## 先不要展开的目录
+## 接下来
 
-- `blocks/` 里的翻译、时间线、导入状态、会话分叉。它们是产品块。
-- `MessagePartsRenderer.tsx` 里布局合并的细节。`livePartRanges.ts` 只在你要改流式分组时再读。
+工具 part 进了 `ToolBlockGroup` 之后，还要按工具名选卡片。[工具在界面上](/ui/tools) 就是这张分发表。
+
+源码：`blocks/MessagePartsRenderer.tsx` 的 `case 'text'`，叶子组件在同目录的 `MainTextBlock.tsx`、`ThinkingBlock.tsx`、`ToolBlockGroup.tsx`。

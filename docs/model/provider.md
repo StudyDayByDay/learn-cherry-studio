@@ -10,37 +10,34 @@ next:
 
 # 换厂商不换调用方
 
-预计 15 分钟。
+上一课的执行器只认 `providerId` 和注册表里的客户端。聊天代码不写 `new OpenAI()`。换厂商是换注册的那一项。
 
-## 这一坐要看懂什么
+## 调用方保持这三样
 
-执行器构造时已经把「哪家厂商」收成 `providerId` 加一个 provider 实例。聊天代码传入 id 和设置，不自己 `new OpenAI()`。换一家厂商，是换注册表里的那一项，以及对应的 base URL 和密钥。
-
-内置厂商在 `aiCore` 的 provider 层。产品里用户在设置页添加的模型，会变成主进程拿得到的 `providerSettings`，再传给同一个执行器。
-
-## 先打开哪个文件
-
-`packages/aiCore/src/core/providers/index.ts` 的导出列表，以及 `packages/aiCore/README.md` 里「支持的 Providers」一节。
-
-## 关键代码
-
-README 列出的核心厂商包括 OpenAI、Anthropic、Google、OpenAI 兼容接口、xAI、Azure OpenAI、DeepSeek。扩展厂商通过注册 API 加进去。
-
-执行器侧只依赖这个登记结果：
+一次聊天请求在业务层始终是：
 
 ```ts
-this.registry = createProviderRegistry({
-  [config.providerId]: provider
+streamText({
+  model: modelId,
+  messages,
+  tools
 })
 ```
 
-调用 `streamText` 的人继续传 `model` id。解析 id 的插件按当前 `providerId` 去注册表里找。
+`modelId` 是字符串。执行器按当前的 `providerId` 去注册表里找谁能解析这个 id。同一句调用，`providerId` 从 `openai` 换成 `anthropic`，走的就是另一家的 HTTP。温度、消息、工具这些参数名字保持 SDK 的统一形状，各家请求体的差异在 provider 适配器内部消化。
 
-## 记住这一点
+包文档里列出的核心厂商包括 OpenAI、Anthropic、Google、xAI、Azure OpenAI、DeepSeek，以及 OpenAI 兼容接口。兼容接口是一等公民：很多国产模型和中转站提供的就是「看起来像 OpenAI」的地址。对 Cherry 来说，那是另一个 `providerId`，外加用户填写的 `baseURL` 和 Key，不是另一套聊天气泡。
 
-兼容接口是一等公民。很多国产模型和中转站走 OpenAI 兼容协议，它们在这条链上就是另一个 `providerId`，不是另一套聊天代码。
+用户在设置页添加模型时，主进程把这些设置收成 `providerSettings`，构造执行器时传进去。YAML 或界面上的模型列表变了，`MessageList` 不用改。
 
-## 先不要展开的目录
+## 解析发生在内部插件
 
-- `providers/core/ExtensionRegistry.ts`。等你要加一家新厂商时再读。
-- 根 `package.json` 里每一个 `@ai-sdk/*`。那是可选依赖清单，不是调用顺序。
+执行器里那个 `_internal_resolveModel` 插件做的就是：拿着字符串，问注册表要模型对象。解析失败会在进 HTTP 之前抛出，窗口收到的是错误 chunk，而不是一个挂起的流。
+
+所以「换厂商」的代码审查点在 provider 注册和设置，不在 `components/chat`。界面只显示模型名字。
+
+## 接下来
+
+网页搜索、厂商自带工具不想写进每一次 `streamText`。[插件管道](/model/plugins) 把这些横切能力挂到执行器上。
+
+源码：`packages/aiCore/src/core/providers/index.ts`，以及执行器构造函数里的 `createProviderRegistry`。

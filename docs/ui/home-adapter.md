@@ -10,20 +10,11 @@ next:
 
 # Home 适配器
 
-预计 15 分钟。
+共享列表不抓数据。首页用一个 hook，把话题、消息、按钮收成上一课的那个 `{ state, actions, meta }`，再交给 Provider。Agent 会话有自己的 hook，返回的形状相同，里面的按钮可以少一截。
 
-## 这一坐要看懂什么
-
-共享列表不自己抓数据。首页用一个 hook 把话题、消息、parts、翻页和按钮收成 `MessageListProviderValue`，再交给 `MessageList`。Agent 会话有自己的适配器，形状相同，数据来源不同。
-
-## 先打开哪个文件
-
-`src/renderer/pages/home/messages/homeMessageListAdapter.tsx` 里的 `useHomeMessageListProviderValue`。只看函数签名和它返回对象的 `state` 字段，函数体后半是各种按钮。
-
-## 关键代码
+## 页面数据从参数进来
 
 ```tsx
-// agent/cherry-studio/src/renderer/pages/home/messages/homeMessageListAdapter.tsx
 export function useHomeMessageListProviderValue({
   topic,
   assistant,
@@ -33,19 +24,39 @@ export function useHomeMessageListProviderValue({
   isInitialLoading = false,
   hasOlder = false,
   loadOlder
-  // ...
 }: HomeMessageListParams): MessageListProviderValue {
-  // 返回 { state, actions, meta }
+  // ...
+  return useMemo(() => ({ state, actions, meta }), [actions, meta, state])
 }
 ```
 
-参数里的 `messages`、`partsByMessageId`、`streamingLayers` 就是列表契约里的那三样。适配器是页面数据和共享组件之间的边界。
+调用方已经按 `topic.id` 拿到了消息。适配器不再发一次「把消息查出来」的请求。它做的是翻译：把首页特有的能力装进 `actions`。
 
-## 记住这一点
+`meta` 用助手资料和话题名：
 
-换一个聊天页面时，优先找它的 adapter，而不是改 `MessageList.tsx`。
+```tsx
+const meta = useMemo<MessageListMeta>(
+  () => ({
+    selectionLayer: true,
+    userProfile: headerCapabilities.userProfile,
+    assistantProfile: assistant
+      ? { name: assistant.name, avatar: assistant.avatarSrc ?? assistant.emoji }
+      : undefined,
+    assistantAvatarSources,
+    imageExportFileName: topic.name
+  }),
+  [assistant, assistantAvatarSources, headerCapabilities.userProfile, topic.name]
+)
+```
 
-## 先不要展开的目录
+导出图片时的文件名用话题标题。头像用助手的图片或 emoji。这些不影响消息正文，所以在 `meta`。
 
-- 这个文件 130 行之后的 mutation、翻译语言、图片操作。
-- `src/renderer/pages/home` 的其他布局文件。
+`actions` 里是首页允许的操作：向上翻页用参数里的 `loadOlder`，编辑、删除、换分支、重新生成，各自转到聊天写入接口。某个操作在捕获图片的模式下不该出现，适配器就传 `undefined`。列表看到没有这个函数，就不渲染按钮。
+
+hook 有九百多行，因为首页按钮多。主线只看三件事：参数是页面数据，返回值是契约，按钮是函数而不是布尔开关。
+
+## 接下来
+
+界面这条线到这里接上了。下一课离开 React，看渲染进程怎样把请求送进主进程：[preload 与 IPC](/boundary/preload)。
+
+源码：`src/renderer/pages/home/messages/homeMessageListAdapter.tsx` 的 `useHomeMessageListProviderValue`。

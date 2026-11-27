@@ -10,39 +10,34 @@ next:
 
 # 为什么有 aiCore
 
-预计 12 分钟。
+设置页里可以选 OpenAI、Anthropic、Gemini、DeepSeek，也可以填一个兼容接口的地址。对聊天页来说，这些都应该是「一个模型 id」。如果每种厂商在 React 里各写一个客户端，换厂商就要改界面。
 
-## 这一坐要看懂什么
+`packages/aiCore` 把这件事收成一个包。界面和主进程业务只依赖它的运行时，不依赖某一家的 SDK。
 
-应用要同时接 OpenAI、Anthropic、Gemini、DeepSeek，以及一大批 OpenAI 兼容接口。如果每个页面自己 `import` 一家 SDK，厂商差异会漏进 React 组件。
+## 两层
 
-`packages/aiCore` 把这件事收成两层：
+包自己的说明把结构收成：
 
-- `models`：这家厂商的模型对象怎么创建
-- `runtime`：一次 `streamText` / `generateText` 怎么带着插件跑起来
+- `models`：给定厂商 id 和密钥，创建出 SDK 要的模型对象。
+- `runtime`：拿着这个模型去跑 `streamText` / `generateText`，并允许插件在请求前后插手。
 
-界面和主进程业务只跟 runtime 说话。包的 README 在 `packages/aiCore/README.md`。
+聊天代码写的是「用这个 providerId 和 modelId 跑一段流」。OpenAI 的 `baseURL`、Anthropic 的请求头，留在 models 层。你以后要加一家厂商，改的是注册，不是消息列表。
 
-## 先打开哪个文件
-
-`packages/aiCore/src/index.ts` 的导出，以及 `packages/aiCore/src/core/agents/createAgent.ts` 的文件头注释。
-
-## 关键代码
-
-`createAgent.ts` 开头写着它的分工：复用执行器的厂商解析和插件管道，再装成一个 `ToolLoopAgent`。
+这个包还做第三件事：把单次调用升级成会自己跑工具的 agent。文件 `createAgent.ts` 的开头是：
 
 ```ts
 import { ToolLoopAgent } from 'ai'
 import { createExecutor } from '../runtime'
 ```
 
-所以这个包做三件事：统一厂商、在请求前后插插件、把单次调用升级成会自己跑工具的 agent。第三件是后面 `createAgent` 那一课的内容。
+单次 `streamText` 在模型说出「我要调用搜索」时，结果里只有工具调用，没有最终回答。`ToolLoopAgent` 负责把工具结果送回去再问一次。`createAgent` 负责把 Cherry 的厂商解析和插件接到这个类上。那一课会把函数走完。现在先记住层次：厂商在下，一次调用在中，工具循环在上。
 
-## 记住这一点
+## 密钥不进这个包的界面侧
 
-页面里不应该出现某家厂商的客户端构造函数。看到 `@ai-sdk/openai` 这类 import，它应该在 `aiCore` 或主进程的 provider 配置里。
+`aiCore` 接收 `providerSettings`，里面可以有 Key。调用它的是主进程。渲染进程只传模型 id，主进程再把设置填上。所以即使用了统一接口，Key 仍然不出现在 React 的打包结果里。
 
-## 先不要展开的目录
+## 接下来
 
-- `packages/ai-sdk-provider`。那是 Cherry 自己的一家网关，属于「又一个 provider」，不是总开关。
-- `packages/provider-registry`。模型目录和推理能力表，配置界面会用到，调用链先不依赖你读完它。
+一次调用具体怎么从「模型 id 字符串」变成 SDK 的 `streamText`，看 [一次调用怎么发出去](/model/executor)。
+
+源码：`packages/aiCore/README.md` 和 `packages/aiCore/src/core/agents/createAgent.ts` 的文件头。

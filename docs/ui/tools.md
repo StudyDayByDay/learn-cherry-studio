@@ -10,22 +10,15 @@ next:
 
 # 工具在界面上
 
-预计 15 分钟。
+模型调用了网页搜索，气泡里应该出现一张搜索卡片，而不是把 JSON 糊在正文后面。选哪张卡片是纯界面逻辑。搜索请求早就在主进程里发出去了，这里拿到的是结果。
 
-## 这一坐要看懂什么
+## 按名字挑卡片
 
-工具调用先被收成一组，再按工具名选一张卡片。搜索、知识库、画图、MCP、向用户提问，卡片不同，数据都来自同一种工具响应。
-
-## 先打开哪个文件
-
-`src/renderer/components/chat/messages/tools/chooseTool.tsx`。它是分发函数，每个具体卡片在子目录里。
-
-## 关键代码
+`chooseTool` 接收工具响应，看 `toolName`：
 
 ```tsx
-// agent/cherry-studio/src/renderer/components/chat/messages/tools/chooseTool.tsx
-if (toolName.startsWith(builtinToolsPrefix)) {
-  const suffix = toolName.slice(builtinToolsPrefix.length)
+if (toolName.startsWith('builtin_')) {
+  const suffix = toolName.slice('builtin_'.length)
   switch (suffix) {
     case 'web_search':
     case 'web_search_preview':
@@ -38,13 +31,18 @@ if (toolName.startsWith(builtinToolsPrefix)) {
 }
 ```
 
-带 `mcp__` 前缀或走 agent 时间线的工具，会进 `AgentExecutionTimeline`。卡片目录可以按名字认：`tools/webSearch`、`tools/knowledge`、`tools/mcp`、`tools/painting`。
+`builtin_web_search` 去掉前缀后是 `web_search`，渲染搜索标题卡。知识库搜索同理。画图在 `tools/painting`，MCP 工具常常带 `mcp__` 前缀，走 `tools/mcp` 或更通用的时间线卡片 `AgentExecutionTimeline`。
 
-## 记住这一点
+这是一张分发表，和 React Router 的路由表类似：名字决定组件，组件再读 `toolResponse` 里的参数和输出。找不到专用卡片时返回 `null` 或退回通用卡片，列表不会因此崩溃。
 
-这里只决定「画哪张卡片」。工具真正执行发生在主进程。界面拿到的是已经发生过的调用和结果。
+卡片上的「允许执行」也是界面。按钮把用户的选择送回主进程，真正跑工具的仍是主进程。那道门在后面的审批课。这里只要看出：展示和执行是分开的。
 
-## 先不要展开的目录
+## 和正文的关系
 
-- `tools/agent/` 下面的各种 result 格式化。那是编码 agent 的展示细节。
-- `tools/automation/`。电脑操作和 REPL 的卡片，产品能力课再认门。
+工具卡片和正文是相邻的 parts。搜索卡片在上，总结文字在下，因为模型先调用工具，再根据结果写 `text` part。界面不重新排序，只按数组顺序画。
+
+## 接下来
+
+正文还在增长时，列表怎样避免把历史消息全部重画，看 [流式文字](/ui/stream)。
+
+源码：`messages/tools/chooseTool.tsx`，各张卡片在 `tools/webSearch`、`tools/knowledge`、`tools/mcp`。

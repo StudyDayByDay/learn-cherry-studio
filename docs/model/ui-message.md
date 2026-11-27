@@ -10,29 +10,27 @@ next:
 
 # UIMessage 与 parts
 
-预计 15 分钟。
+前面界面课里的「一条消息、里面有多块」，在 Vercel AI SDK 里有正式的名字。搞懂这两个类型，后面的流、工具、思考过程就都挂得上去。
 
-## 这一坐要看懂什么
+## 画在屏幕上的那一份
 
-界面上的一条消息，在 Vercel AI SDK 里叫 `UIMessage`。它的正文不是一个字符串，而是有序的 parts。常见的有：
-
-| part | 界面上是什么 |
-| --- | --- |
-| `text` | 正文 |
-| `reasoning` | 思考过程 |
-| `tool-*` 或动态工具 part | 一次工具调用和它的结果 |
-| `file` | 附件 |
-
-Cherry Studio 在这个类型上又加了自己的元数据，例如完整度、输入 id、错误。产品类型名叫 `CherryUIMessage`，定义在共享数据类型里。运行时包里的 `RuntimeMessage` 是同一套 `UIMessage` 的一个特化。
-
-## 先打开哪个文件
-
-`packages/agent-runtime/src/contracts.ts` 里 `RuntimeMessage` 那几行。再回想界面课的 `case 'text'`。
-
-## 关键代码
+SDK 把界面消息叫做 `UIMessage`。正文不在 `content: string` 里，而在有序的 `parts` 里。你在内容块那一课见过的数组，就是它：
 
 ```ts
-// agent/cherry-studio/packages/agent-runtime/src/contracts.ts
+{
+  id: 'm2',
+  role: 'assistant',
+  parts: [
+    { type: 'reasoning', text: '需要实时天气。', state: 'done' },
+    { type: 'tool-web_search', toolCallId: 'call_1', state: 'output-available', input: { query: '北京天气' }, output: { /* ... */ } },
+    { type: 'text', text: '今天北京多云，12°C。', state: 'done' }
+  ]
+}
+```
+
+`role` 仍是 `user` 或 `assistant`。`parts` 让一条助手消息同时带上思考、工具和正文。Cherry 在 SDK 的元数据上加了自己的字段，运行时包里写成：
+
+```ts
 export type RuntimeMessage = UIMessage<{
   completeness: Completeness
   inputId?: InputId
@@ -40,15 +38,23 @@ export type RuntimeMessage = UIMessage<{
 }>
 ```
 
-`Completeness` 是 `'partial' | 'complete' | 'unknown'`。流还在吐的时候，这条消息可以是 partial。这和界面上 `state === 'streaming'` 是同一件事的两侧。
+`completeness` 是 `'partial' | 'complete' | 'unknown'`。字还在吐的时候，这条消息可以是 partial。这和界面上 `state: 'streaming'` 是同一件事的两侧：一边是消息级的「还没写完」，一边是某个 part 自己的状态。
 
-发给模型的历史有时会转成另一种结构 `ModelMessage`。那是模型接口要的格式，和画在屏幕上的 `UIMessage` 不是同一个类型。转换发生在主进程，例如 `src/main/ai/messages/messageRules.ts` 的 `toModelMessages`。这一坐知道有这一步即可。
+产品里的完整类型叫 `CherryUIMessage`，字段更多，例如引用和用量。读主线时先认 `role + parts`。
 
-## 记住这一点
+## 发给模型的是另一份
 
-先记 `UIMessage` 和 parts。看到 `ModelMessage`，把它当成「即将发给模型的那一份」，不要和气泡里的数据混成一个类型。
+模型接口要的历史常常叫 `ModelMessage`。它更接近「user / assistant / tool 的对话记录」，不一定保留界面上的折叠状态和头像。主进程在真正请求前做转换，入口之一是 `toModelMessages`。
 
-## 先不要展开的目录
+所以仓库里有两份消息：
 
-- `src/shared/data/types/message`。`CherryUIMessage` 的完整字段在这里，很长。
-- `packages/agent-runtime/src/contracts.ts` 里上下文占用、输入状态的后半。运行时课会拆开。
+- `UIMessage`：窗口正在画的，parts 齐全。
+- `ModelMessage`：这一轮塞进模型上下文的。
+
+流式 chunk 先更新 `UIMessage`。压缩上下文时动的是 `ModelMessage`。后面压缩那一课会再看到这个区别。把两者当成同一个对象，会在「为什么界面上还在、发给模型的历史却变短了」上卡住。
+
+## 接下来
+
+让模型产生这些 parts，有两个入口函数。[streamText 与 generateText](/model/stream-text) 说明聊天为什么用流。
+
+源码：`packages/agent-runtime/src/contracts.ts` 的 `RuntimeMessage`。界面 parts 的类型来自依赖 `ai`。

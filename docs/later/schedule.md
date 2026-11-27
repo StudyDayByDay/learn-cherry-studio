@@ -8,36 +8,23 @@ next: false
 
 # 定时
 
-预计 10 分钟。认门，不往下读。
+仓库里有一层钟。它知道几点该响，不知道响了以后要问模型还是要清缓存。把这两件事分开，才不会在调度器里找提示词。
 
-## 这一坐要看懂什么
+## 钟只负责到点
 
-仓库里有一层和业务无关的钟：`src/main/core/scheduler`。它只知道「到点调用某个回调」，支持 cron、间隔和一次性延迟。它不知道回调是在跑 agent 还是在清缓存。
+`src/main/core/scheduler` 提供 `registerSchedule`、暂停、恢复、取消和立刻触发。时间表达式可以是 cron、固定间隔，或一次性的延迟。回调由注册的人传进去。钟不保存业务数据，重启之后要由上层把计划重新登记。
 
-到点要做的事，是上层拿着这个钟去注册的。定时任务的产品含义（让 agent 以后再跑一轮）因此不在 scheduler 文件里，而在注册回调的那一侧。界面上如果看到定时任务的工具卡片，那是结果展示，在 `messages/tools/agent/` 一类目录。
+「每天早上让 agent 看一遍邮件」因此是两层：
 
-## 先打开哪个文件
+1. 钟在早上触发回调。
+2. 回调里的产品代码创建一轮运行，走你已经读过的调度台和 `Agent`。
 
-`src/main/core/scheduler/README.md`。它很短，并且指向 `docs/dev/references/job-and-scheduler/`。这一坐读 README 即可。
+界面上如果出现定时任务的结果卡片，那是这一轮运行写进消息的工具 part，卡片在 `messages/tools/agent/` 一类目录。卡片不包含 cron 表达式的解析。表达式在登记那一侧。
 
-## 关键代码
+和 `setInterval` 的差别是：这个服务把计划收成可以暂停和查询下次运行时间的对象，而不是散落的定时器句柄。选择哪种，README 指向 `docs/dev/references/job-and-scheduler/`。那份文档是以后要加一种计划时再读的。
 
-```ts
-// 概念上的用法，完整示例在 scheduler/README.md
-import { application } from '@application'
+## 主线到这里
 
-// SchedulerService：registerSchedule / pause / resume / unregister / triggerNow
-```
+从输入框到气泡，从一次 `streamText` 到工具循环，再从外部 agent 的增量回到同一套 parts，这条链已经闭合。之后打开任何一个文件，先问它在链的哪一截：画、过桥、调度、调用模型、执行工具，还是把别人的循环翻译过来。对得上，就不会在一千个文件里迷路。
 
-README 强调它是无状态的时间调度。和 `registerInterval`、原始 `setInterval` 的选择，写在它链接的那份 usage 文档里。
-
-## 记住这一点
-
-看到「定时」先分清两层：钟在 `src/main/core/scheduler`，到点之后跑什么是注册者的事。不要在钟的实现里找提示词。
-
-## 先不要展开的目录
-
-- `src/main/core/job/`。任务队列在钟的上面，另一份文档。
-- `docs/dev/references/job-and-scheduler/` 的全文。等你真的要加一种定时任务再打开。
-
-到这里，主线课结束。之后遇到具体文件，从侧边栏回到对应的那一课，再沿着那一课点名的路径往下读。
+源码：`src/main/core/scheduler/README.md`。

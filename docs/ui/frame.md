@@ -10,37 +10,39 @@ next:
 
 # 消息骨架
 
-预计 12 分钟。
+一条消息在界面上先有框，再有内容。框负责「这是谁说的、操作栏在哪」。内容负责「里面那些块怎么排」。改气泡圆角去框，改工具卡片去内容。
 
-## 这一坐要看懂什么
+## 框把正文交给下一块
 
-一条消息在界面上先有骨架，再有内容。骨架在 `frame/`：头像和模型名、正文容器、底部操作、附件、token 统计。正文容器不解析 Markdown，它把消息交给内容块渲染器。
-
-## 先打开哪个文件
-
-`src/renderer/components/chat/messages/frame/MessageContent.tsx`，全文大约 30 行。然后在 `MessageFrame.tsx` 里搜 `MessageHeader` 和 `MessageContent`，看它们怎么拼在一起。
-
-## 关键代码
+`MessageContent` 很短。它处理 @某个模型的那一行提示，然后把整条消息交给 parts 渲染器：
 
 ```tsx
-// agent/cherry-studio/src/renderer/components/chat/messages/frame/MessageContent.tsx
 const MessageContent: React.FC<Props> = ({ message, hoistAttachments }) => {
   return (
     <>
-      {/* @某个模型时的提示 */}
+      {!isEmpty(message.mentions) && (
+        <Flex className="mb-2.5 flex-wrap gap-2">
+          {message.mentions?.map((model) => (
+            <span key={createUniqueModelId(model.provider, model.id)} className="text-primary">
+              {'@' + model.name}
+            </span>
+          ))}
+        </Flex>
+      )}
       <MessagePartsRenderer message={message} hoistAttachments={hoistAttachments} />
     </>
   )
 }
 ```
 
-`MessageFrame.tsx` 在用户消息和助手消息两种布局里都会用到 `MessageHeader` 与 `MessageContent`。头在 `frame/`，块在 `blocks/`。
+`mentions` 是用户在输入框里点名的模型，画成 `@模型名`。`hoistAttachments` 为真时，附件从正文流里提出去，放到框的另一块区域，避免图片夹在文字中间把操作栏顶乱。
 
-## 记住这一点
+`MessageFrame` 在用户消息和助手消息两种布局里都会用到 `MessageHeader` 和 `MessageContent`。头里是头像、模型名、时间。用户消息和助手消息的对齐不同，所以框有分支。分支分的是布局，不是「要不要调用模型」。
 
-改气泡外观、操作栏、头像，去 `frame/`。改「文字、思考、工具卡片怎么排」，去 `blocks/`。
+底部的复制、重试、翻译是 `MessageMenuBar`。那些按钮调用的是列表契约里的 `actions`。骨架知道按钮长什么样，不知道重新生成时主进程会做什么。
 
-## 先不要展开的目录
+## 接下来
 
-- `frame/MessageMenuBar.tsx` 和一串 toolbar 文件。那是复制、重试、翻译按钮的产品菜单。
-- `frame/MessageTokens.tsx`。用量展示，和协议课可以分开看。
+`MessagePartsRenderer` 拿到消息之后，按 part 的类型分发。这是 [内容块](/ui/blocks)。
+
+源码：`frame/MessageContent.tsx`、`frame/MessageFrame.tsx`。

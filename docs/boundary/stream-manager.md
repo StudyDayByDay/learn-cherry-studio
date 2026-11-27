@@ -10,44 +10,37 @@ next:
 
 # AiStreamManager
 
-预计 15 分钟。
+一次聊天在主进程里同时有好几件要做的事：问模型、把字推给窗口、写进数据库、记一笔用量。这些事如果都写在 React 里，或者都写在调用模型的那个函数里，任何一边改动都会扯到另一边。调度台把「这轮流的生命周期」单独拿出来。
 
-## 这一坐要看懂什么
+## 它调度，不生成
 
-`AiStreamManager` 是一次对话流的调度台。它记录这轮还在不在跑、把增量交给各个听众、在结束时落库。它不选择厂商，也不写工具循环。模型循环在 `runtime/aiSdk/Agent.ts`，由调度台启动。
-
-目录 `streamManager/` 可以当成一张表来认，不用读完。
-
-| 文件 | 职责 |
-| --- | --- |
-| `AiStreamManager.ts` | 调度台本体 |
-| `listeners/WebContentsListener.ts` | 推给窗口 |
-| `listeners/PersistenceListener.ts` | 把回复写进存储 |
-| `context/PersistentChatContextProvider.ts` | 普通聊天的上下文从哪来 |
-| `context/AgentChatContextProvider.ts` | Agent 会话的上下文从哪来 |
-| `api/startAgentSessionRun.ts` | 启动一次 agent 会话运行 |
-
-## 先打开哪个文件
-
-`src/main/ai/streamManager/index.ts`，看它导出了谁。然后打开 `AiStreamManager.ts` 只读前 40 行的 import，确认它依赖投影、失败分类和消息服务，而不是直接 `fetch` 某个模型 API。
-
-## 关键代码
+`streamManager/index.ts` 导出的就是这些角色：
 
 ```ts
-// agent/cherry-studio/src/main/ai/streamManager/index.ts
 export { AiStreamManager } from './AiStreamManager'
 export { WebContentsListener } from './listeners/WebContentsListener'
 export { PersistenceListener } from './listeners/PersistenceListener'
 export { startAgentSessionRun } from './api/startAgentSessionRun'
 ```
 
-`AiStreamManager.ts` 有两千多行。这一坐把它当成「谁在听、这轮流何时结束」的服务。跟模型参数有关的代码在下一组课。
+`AiStreamManager` 记住这一轮的状态：还在跑、暂停了、还是已经结束。模型吐出一个 chunk，它转给所有听众。
 
-## 记住这一点
+听众各干各的：
 
-调度台搬的是 `UIMessageChunk` 和投影更新。厂商差异在它启动的 Agent 里面已经被抹平。
+| 听众 | 收到 chunk 之后 |
+| --- | --- |
+| `WebContentsListener` | 合并后推给窗口 |
+| `PersistenceListener` | 把助手消息写进存储 |
+| 追踪听众 | 把这一轮交给观测系统 |
 
-## 先不要展开的目录
+普通聊天的历史从 `PersistentChatContextProvider` 来。Agent 会话从 `AgentChatContextProvider` 来。两者都是「把数据库里的消息整理成这一轮要带上的上下文」。调度台不关心消息存在哪张表。
 
-- `persistence/` 和 `context/` 的测试。
-- `pipeStreamLoop.ts`。那是把 SDK 流接到听众的管道，等你读完 `Agent.ts` 再回来。
+`startAgentSessionRun` 是启动一次 Agent 会话的入口。它仍然把运行登记到这个调度台，这样窗口和落库不用为 Agent 再写一套。
+
+`AiStreamManager.ts` 有两千多行，因为暂停、重连、多模型、错误分类都在里面。读主线时把它当成一个发布者：上游是即将讲到的 `Agent`，下游是上面这些听众。它不选择 OpenAI 还是 Anthropic，也不执行工具。
+
+## 接下来
+
+窗口上看到的一块块内容，在协议里叫什么，从 [UIMessage 与 parts](/model/ui-message) 开始。这是从前端数据走进模型数据的一步。
+
+源码：`src/main/ai/streamManager/`。调度台本体是 `AiStreamManager.ts`。

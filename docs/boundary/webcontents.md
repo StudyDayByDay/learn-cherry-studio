@@ -10,20 +10,11 @@ next:
 
 # 流推回窗口
 
-预计 15 分钟。
+模型一个 token 一个 token地吐。如果每个 token 都做一次 IPC，窗口会被消息淹没，React 也会跟着抖。推给界面的听众先把十几个毫秒里的增量粘在一起，再发。
 
-## 这一坐要看懂什么
-
-主进程里可以同时有好几种流的听众：写数据库的、打追踪的、推给窗口的。推给窗口的那个叫 `WebContentsListener`。一个话题、一个窗口，一个实例。它把模型的小增量先合并大约 16 毫秒，再发给这个窗口，避免每个 token 都打一次 IPC。
-
-## 先打开哪个文件
-
-`src/main/ai/streamManager/listeners/WebContentsListener.ts`。先看类声明和 `emit`，再看文件顶部的三个常量。
-
-## 关键代码
+## 一个窗口、一个话题、一个听众
 
 ```ts
-// agent/cherry-studio/src/main/ai/streamManager/listeners/WebContentsListener.ts
 const COALESCE_WINDOW_MS = 16
 
 export class WebContentsListener implements StreamListener {
@@ -40,13 +31,18 @@ export class WebContentsListener implements StreamListener {
 }
 ```
 
-文本增量会先收成 `text-delta`，和推理增量、工具参数增量一起排队。真正过桥的事件名是 `ai.stream.chunk`。渲染进程用上一课的 `on` 接住它。
+`WebContents` 是 Electron 里「这个窗口的网页」。`id` 写成 `wc:窗口号:话题号`，所以同一个话题在两个窗口打开时，各有一个听众，互不影响。id 以 `wc:` 开头的才是给界面的。写数据库、打追踪是别的听众，它们不走这条 `send`。
 
-## 记住这一点
+`emit` 用的频道和 preload 里 `on` 听的是同一个 `IpcApi_Event`。事件名是 `ai.stream.chunk`，载荷里有 `topicId` 和这一小段 chunk。渲染进程的订阅者按话题过滤，只把属于当前页的增量合进消息。
 
-听众 id 以 `wc:` 开头的，才是窗口。持久化和追踪是别的 listener，它们不负责画字。
+## 16 毫秒里粘住什么
 
-## 先不要展开的目录
+文本增量的类型是 `text-delta`，思考是 `reasoning-delta`，工具参数还在生成时是 `tool-input-delta`。同一类、同一块上的增量可以拼成一条更长的字符串。窗口关了，`wc.isDestroyed()` 为真，未发出的缓冲丢掉，不再 `send`。
 
-- 同文件后半的合并细节，除非你在查「字跳得太碎或太顿」。
-- `listeners/` 里的 `PersistenceListener.ts`、`TraceFlushListener.ts`、`SseListener.ts`。知道它们是并列听众即可。
+16 毫秒大约是一帧。人眼看到的仍是连续出字，IPC 次数少了一个数量级。
+
+## 接下来
+
+谁创建这个听众、谁在流结束时写数据库，是调度台 [AiStreamManager](/boundary/stream-manager)。
+
+源码：`src/main/ai/streamManager/listeners/WebContentsListener.ts`。

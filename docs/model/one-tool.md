@@ -10,25 +10,20 @@ next:
 
 # 一个小工具
 
-预计 15 分钟。
+模型不会自己上网。它只能在回复里说「我要调用名为 web_search 的工具，参数是这句话」。主进程里必须有一份同名实现：读参数，发出请求，把结果写成工具 part。网页搜索足够小，又能把这三件套看全。
 
-## 这一坐要看懂什么
-
-工具是给模型的一个函数：一段说明、一份参数 schema、一次执行。模型按说明决定要不要调用。执行发生在主进程。结果写回消息的工具 part，界面课里的卡片再把它画出来。
-
-联网搜索是一个够小、又完整的例子。核心函数在 `webLookup.ts`，注释写明它同时被 AI SDK 内置工具和 Claude Code 的桥使用。两套运行时只是格式不同，查找逻辑这一份。
-
-## 先打开哪个文件
-
-`src/main/ai/tools/webLookup.ts` 的文件头、描述常量和错误形状。先不要追 `WebSearchService`。
-
-## 关键代码
+## 给模型看的说明
 
 ```ts
-// agent/cherry-studio/src/main/ai/tools/webLookup.ts
 export const WEB_SEARCH_DESCRIPTION =
   'Search the web for current or uncertain facts. Retry in the likely source language; cite with [cite:id].'
+```
 
+这段字符串进工具定义的 `description`。模型靠它决定「天气这种实时问题该不该搜」。写得含糊，模型就会少调用或者乱调用。参数用 zod 描述，SDK 会把它变成 JSON Schema 发给模型。模型返回的参数若对不上 schema，调用在执行前就失败。
+
+失败也不要抛成一个让循环崩溃的异常。搜索挂了和「搜了但没有结果」必须能区分：
+
+```ts
 export const webLookupErrorSchema = z.object({
   error: z.string(),
   retryable: z.boolean().optional(),
@@ -36,17 +31,18 @@ export const webLookupErrorSchema = z.object({
 })
 ```
 
-失败不抛异常，而是返回 `{ error }`。这样模型能分清「搜了但没有结果」和「搜索本身失败了」。取消信号是例外，取消要继续抛出去。
+成功返回结果数组。失败返回 `{ error, retryable }`。`retryable` 告诉模型这是网络抖动，可以再试一次。配置里根本没有搜索引擎时，错误是永久性的，说明文字会要求模型告诉用户去设置里补，而不是无限重试。用户取消是例外，取消要继续把异常抛出去，循环才停得下来。
 
-描述字符串会进工具定义，模型读的是它。schema 同时约束参数和错误。执行函数向用户配置的搜索服务发请求，再把结果收成工具输出。
+同一份查找函数被两条运行时使用：AI SDK 的内置工具，以及 Claude Code 那条桥。两边的差别只是参数包装，查网页的逻辑在 `webLookup.ts`。
 
-界面那一侧，`chooseTool.tsx` 看到 `web_search` 就渲染 `MessageWebSearchToolTitle`。名字对得上，链就合拢了。
+## 结果怎样回到气泡
 
-## 记住这一点
+执行完，SDK 把输出放进工具 part 的 `output`，`state` 变成 `output-available`。调度台把这个 part 推给窗口。界面课的 `chooseTool` 看到 `web_search`，画出搜索卡片。卡片读的就是这份 `output`。
 
-一个工具三件套：给模型看的 description、zod schema、主进程里的 execute。展示卡片是第四件，而且在渲染进程。
+四件事因此连在一起：description 给模型看，zod 约束参数，主进程函数执行，渲染进程按名字画卡片。缺了执行，卡片永远在加载。缺了卡片，用户只能看见一段 JSON。
 
-## 先不要展开的目录
+## 接下来
 
-- `src/main/services/webSearch`。各家搜索引擎的适配。
-- `tools/computerUse.ts`、`tools/automationRepl.ts`。它们权限和界面都更重。
+对话变长以后，这些工具结果也会把上下文撑满。[上下文快满了](/model/context) 说明发出去之前会先压缩。
+
+源码：`src/main/ai/tools/webLookup.ts`。界面卡片在 `messages/tools/chooseTool.tsx`。

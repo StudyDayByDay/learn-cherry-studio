@@ -10,25 +10,28 @@ next:
 
 # 一次调用怎么发出去
 
-预计 15 分钟。
+`RuntimeExecutor` 是「调用一次模型」的对象。业务代码拿到它，调用 `streamText`。厂商实例、插件、模型 id 的解析都关在里面。
 
-## 这一坐要看懂什么
-
-`RuntimeExecutor` 是一次模型调用的执行器。构造时它记住厂商 id、厂商实例和插件列表，并用 AI SDK 的 `createProviderRegistry` 登记这家厂商。`streamText` 被调用时，它先让插件改参数、解析模型，再把结果交给 SDK。
-
-## 先打开哪个文件
-
-`packages/aiCore/src/core/runtime/executor.ts` 的构造函数和 `streamText` 方法。
-
-## 关键代码
+## 构造时记住是谁
 
 ```ts
-// agent/cherry-studio/packages/aiCore/src/core/runtime/executor.ts
 this.pluginEngine = new PluginEngine(config.providerId, config.plugins || [])
 this.registry = createProviderRegistry({
   [config.providerId]: provider
 })
+```
 
+`providerId` 是 `'openai'` 或 `'anthropic'` 这样的名字。`provider` 是已经配好密钥和地址的客户端。AI SDK 的 `createProviderRegistry` 把名字和客户端登记在一起。之后只要说「openai 的某个模型」，注册表能找到客户端。
+
+插件引擎同时建好。这一次调用要挂哪些插件，在构造时定下来，而不是散落在每次 `streamText` 的参数里。
+
+## 调用时先改参数，再进 SDK
+
+`streamText` 的参数里，`model` 可以是模型对象，也可以是字符串 id。是字符串时，执行器临时加一个内部插件 `_internal_resolveModel`，把 id 换成对象。调用方因此可以写 `model: 'gpt-4o-mini'`。
+
+然后：
+
+```ts
 return this.pluginEngine.executeStreamWithPlugins(
   'streamText',
   params,
@@ -45,13 +48,16 @@ return this.pluginEngine.executeStreamWithPlugins(
 )
 ```
 
-`model` 参数如果是字符串，执行器会插入一个内部插件，把模型 id 解析成模型对象。调用方可以只写 `'gpt-4o-mini'` 这种 id。
+读这个回调的顺序：
 
-## 记住这一点
+1. `transformedParams` 是插件改过的参数。比如塞进了厂商自带的搜索工具。
+2. `resolvedModel` 是解析后的模型对象。`wrapModel` 还可以再包一层，用来做重试或换 Key。
+3. `_streamText` 才真正打开到厂商的 HTTP 流。
 
-业务代码拿到的是执行器。执行器内部才碰 SDK 的 `streamText`。插件要改的是进执行器的参数，不是去包一层新的 HTTP 客户端。
+业务侧看不到 `fetch`。它看到的是执行器方法返回的流，这个流后面会被调度台交给窗口听众。
 
-## 先不要展开的目录
+## 接下来
 
-- `pluginEngine.ts` 的钩子排序。下一课只看插件长什么样。
-- 构造函数里给 embedding 打补丁的那几行。那是兼容某些 v3 provider 的特例。
+换一家厂商时，调用方要改哪几行？[换厂商不换调用方](/model/provider) 说明答案是「几乎不改调用，只改登记」。
+
+源码：`packages/aiCore/src/core/runtime/executor.ts`。
