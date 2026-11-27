@@ -4,35 +4,22 @@ title: 学 Cherry Studio
 
 # 学 Cherry Studio
 
-这是一份给前端开发者的知识导航。Cherry Studio 是用 TypeScript 写的桌面 AI 客户端。你已经会 React，这里带你从消息界面走到模型调用和 agent 循环。
+这是一门课，不是仓库导览。每一课只加一件事，用一段能读完的短代码讲清楚。Cherry Studio 里的真名出现在课的后半，用来对上号。
 
-每一课在页面里把问题和代码讲完。仓库路径写在课的末尾，想对着行号深挖时再打开。
+从 [01 怎么读](/start/how-to-read) 开始，然后顺着侧边栏往下。
 
-## 我是前端，从这里开始
+| 课 | 这一课加上什么 |
+| --- | --- |
+| 02 | 界面和模型不在同一个进程 |
+| 03 | 一句话出去再回来的整条路 |
+| 04–11 | 气泡怎么画，发送不在列表里 |
+| 12–14 | 字怎样从主进程回到窗口 |
+| 15–24 | 一次调用、插件、工具循环 |
+| 25–29 | 别人的 agent 怎样变成同样的气泡 |
+| 30–33 | 外部工具、知识库、语音、定时各认一件事 |
 
-1. [怎么读这份导航](/start/how-to-read)
-2. [三块代码](/map/three-parts)
-3. [一条消息的全程](/map/one-message)
-4. 然后按侧边栏往下：界面、进程边界、模型调用、agent 运行时
+本地预览：
 
-## 一条消息怎么走
-
-输入框和消息列表都在渲染进程里，它们是并列的两块界面。发送走 IPC，模型在主进程里跑，文字再推回消息列表。
-
-```mermaid
-flowchart LR
-  composer[输入框] --> ipc[preload_IPC]
-  ipc --> manager[AiStreamManager]
-  manager --> agent[主进程_Agent]
-  agent --> core[aiCore_createAgent]
-  core --> loop[ToolLoopAgent]
-  loop --> manager
-  manager --> listener[WebContentsListener]
-  listener --> list[MessageList]
+```bash
+npm run docs:dev
 ```
-
-转型时最值得反复看的三处：
-
-- 界面契约：[列表契约](/ui/contract)
-- 模型入口：[createAgent](/model/create-agent)
-- 事件怎么变成消息：[文本增量](/runtime/text-delta)

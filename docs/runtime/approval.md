@@ -1,52 +1,46 @@
 ---
-title: 工具审批认门
+title: 27 执行前先问一句
 prev:
-  text: 文本增量
+  text: 26 只追加几个字
   link: /runtime/text-delta
 next:
-  text: 子 agent
+  text: 28 子任务是一条关系
   link: /runtime/subagent
 ---
 
-# 工具审批认门
+# 27 执行前先问一句
 
-搜索网页通常可以直接跑。删除文件、在电脑上执行命令，应该先在气泡里问一句。审批是工具 `execute` 之前的一道门。门有两端：主进程发出「要人决定」，界面画出按钮并把选择送回去。
+> 这一课只加一件事：危险工具先在气泡里等一个允许，允许带一个 id 回去，循环才执行。
 
-## 主进程只给一个身份
+## 问题
+
+搜索网页可以直接跑。删除文件不应该。如果每种工具各写一套确认框，MCP 和本地工具的按钮会各长各的。
+
+## 最小做法
+
+执行前看一眼策略。要问人，就发出一个 id，然后停下。界面按这个 id 把选择送回来。
 
 ```ts
-export interface ApprovalRequestedEvent {
-  topicId: string
-  approvalId: string
-  requestedAt: number
+type Approval = { topicId: string; approvalId: string }
+
+async function runMaybe(topicId: string, tool: Tool, input: unknown) {
+  if (!tool.dangerous) return tool.run(input)
+  const approvalId = crypto.randomUUID()
+  publish({ type: 'approval', topicId, approvalId })
+  const answer = await waitFor(approvalId)
+  if (answer === 'cancel') return { error: 'cancelled', retryable: false }
+  return tool.run(input)
 }
 ```
 
-`topicId` 保证这个请求属于当前话题，不会画到另一个标签上。`approvalId` 是这一次等待的 id。用户点了允许，界面把这个 id 和选择一起送回，主进程才放行对应的那次工具调用。`requestedAt` 用来排序和超时。事件里没有工具参数全文，参数在工具 part 上，界面已经拿得到。
+`topicId` 保证按钮画在当前话题。`approvalId` 把这次等待和这次调用对上。界面不需要第二套状态机，工具块上已经有「正在等、正在执行」。按钮只是 `confirm(approvalId)` 或 `cancel(approvalId)`。
 
-## 界面跟着 part 的状态走
+哪些命令算危险，是一张策略表。这一课不展开那张表。门的形状就是：先问，再跑。
 
-```ts
-export interface ToolApprovalState {
-  isWaiting: boolean
-  isExecuting: boolean
-  isSubmitting: boolean
-  input?: Record<string, unknown>
-}
+## 在 Cherry Studio 里
 
-export interface ToolApprovalActions {
-  confirm: () => void | Promise<void>
-  cancel: () => void | Promise<void>
-  autoApprove?: () => void | Promise<void>
-}
-```
-
-hook 的注释写明：这些字段由 AI SDK 的 `ToolUIPart.state` 驱动。MCP 工具和 Claude 的工具在 hook 这一层不再各写一套。是等用户、正在执行，还是正在把选择提交回去，都从 part 状态推出来。`confirm` 和 `cancel` 是按钮。`autoApprove` 可选，给「这一类以后都允许」。
-
-真正的危险命令表在 `src/main/ai/toolApproval/`。那是策略：哪些命令要问、哪些直接拒绝。这一课把链路接上即可。策略表很长，等你要改「什么操作必须问人」时再读。
+事件类型是 `ApprovalRequestedEvent`，字段就是 `topicId`、`approvalId`、`requestedAt`。界面 hook 的状态是 `isWaiting`、`isExecuting`、`isSubmitting`，从工具 part 的 `state` 推出来。策略在 `src/main/ai/toolApproval/`。
 
 ## 接下来
 
-一个 agent 还可以再开一个子任务。契约里这不是另一套消息，而是一条关系：[子 agent](/runtime/subagent)。
-
-源码：`src/main/ai/types/approval.ts`，界面 hook 在 `messages/tools/hooks/useToolApproval.ts`。
+一个工具还可以再开一段独立对话。[28 子任务是一条关系](/runtime/subagent) 不把子对话塞进父气泡。

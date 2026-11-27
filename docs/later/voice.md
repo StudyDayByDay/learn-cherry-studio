@@ -1,29 +1,41 @@
 ---
-title: 语音
+title: 32 语音只换出入口
 prev:
-  text: 知识库
+  text: 31 先建索引再当工具查
   link: /later/knowledge
 next:
-  text: 定时
+  text: 33 钟不知道要问模型
   link: /later/schedule
 ---
 
-# 语音
+# 32 语音只换出入口
 
-语音是同一条对话的另一种出入口。麦克风把话说成文本，文本仍走输入框那条发送链。回复除了画在气泡里，还可以读出来。模型和工具循环不用知道音频从哪来。
+> 这一课只认一件事：语音把声音变成文本，或把文本读出来。变成文本之后，走的仍是课 12 的发送。
 
-## 两条实现，一个会话入口
+## 问题
 
-本地引擎和云端 API 是并列的。
+如果识别和模型循环写在一起，换一个本地语音引擎就要改聊天循环。
 
-本地适配器在 `src/main/ai/voice/localAdapters/`。模型定义带一组操作，`execution.ts` 按操作选择。系统语音、FunASR、Qwen、Kokoro 各自一份适配器。音频解码放在名为 `voice.audio` 的 utility process 里，由 `VoiceSessionService` 注册。网页里录到的常常是 WebM，这些引擎要的是 WAV，所以只有 WebM 才额外解码。取消用 AbortSignal 传进整个解码过程，避免用户松手之后进程还在转码。
+## 最小做法
 
-云端语音回到 `aiCore` 的 `runtime/voice.ts`，本质仍是「一个配好的 provider 调用语音接口」。密钥留在主进程，和聊天模型同一套设置。
+语音停在循环外面。
 
-界面负责采集和播放。识别出的文本交回输入框或直接成为一条用户消息。之后的路径就是这门课前半段已经走过的：IPC、调度台、模型、parts。
+```ts
+const text = await speechToText(audio)
+await ipc.request('chat.send', { topicId, text })
+
+const reply = await waitUntilAssistantDone(topicId)
+await textToSpeech(reply)
+```
+
+本地引擎和云端 API 可以并列。本地的负责系统语音或开源模型，云端的仍走课 19 的厂商登记。密钥留在主进程。界面只采集和播放。
+
+WebM 和 WAV 的转换也停在这一层。循环看见的永远是字符串。
+
+## 在 Cherry Studio 里
+
+会话入口是 `VoiceSessionService`。本地适配器在 `src/main/ai/voice/localAdapters/`，解码放在单独的 utility process。云端语音在 `packages/aiCore` 的 `runtime/voice.ts`。
 
 ## 接下来
 
-最后一页是定时。它容易和「让 agent 过一会儿再跑」混在一起。[定时](/later/schedule) 把钟和到点之后的事情分开。
-
-源码：`src/main/ai/voice/localAdapters/README.md`，会话服务是 `VoiceSessionService.ts`。
+最后一件事容易和「让 agent 过一会儿再跑」混在一起。[33 钟不知道要问模型](/later/schedule) 把定时器和对模型的调用拆开。

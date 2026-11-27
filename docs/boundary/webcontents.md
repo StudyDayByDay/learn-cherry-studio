@@ -1,48 +1,50 @@
 ---
-title: 流推回窗口
+title: 13 十毫秒粘一次
 prev:
-  text: preload 与 IPC
+  text: 12 一问一答和订阅
   link: /boundary/preload
 next:
-  text: AiStreamManager
+  text: 14 调度台不生成文字
   link: /boundary/stream-manager
 ---
 
-# 流推回窗口
+# 13 十毫秒粘一次
 
-模型一个 token 一个 token地吐。如果每个 token 都做一次 IPC，窗口会被消息淹没，React 也会跟着抖。推给界面的听众先把十几个毫秒里的增量粘在一起，再发。
+> 这一课只加一件事：推给窗口之前，把十几毫秒里的增量拼成一条。
 
-## 一个窗口、一个话题、一个听众
+## 问题
+
+模型一个 token 一条消息。每条都过 IPC，再触发一次 React 更新，长回答会卡。人眼并不需要每一毫秒都刷新。
+
+## 最小做法
+
+同一个块上的文本先放进缓冲，到点再发。
 
 ```ts
-const COALESCE_WINDOW_MS = 16
+class WindowPush {
+  private pending = ''
+  private timer: ReturnType<typeof setTimeout> | null = null
 
-export class WebContentsListener implements StreamListener {
-  constructor(
-    private readonly wc: Electron.WebContents,
-    private readonly topicId: string
-  ) {
-    this.id = `wc:${wc.id}:${topicId}`
-  }
-
-  private emit<E extends IpcEventName>(event: E, payload: EventPayload<E>): void {
-    this.wc.send(IpcChannel.IpcApi_Event, event, payload)
+  pushText(delta: string, send: (text: string) => void) {
+    this.pending += delta
+    if (this.timer) return
+    this.timer = setTimeout(() => {
+      send(this.pending)
+      this.pending = ''
+      this.timer = null
+    }, 16)
   }
 }
 ```
 
-`WebContents` 是 Electron 里「这个窗口的网页」。`id` 写成 `wc:窗口号:话题号`，所以同一个话题在两个窗口打开时，各有一个听众，互不影响。id 以 `wc:` 开头的才是给界面的。写数据库、打追踪是别的听众，它们不走这条 `send`。
+16 毫秒大约是一帧。用户仍觉得字是连续出现的，过桥的次数少很多。思考过程的增量和工具参数的增量可以用同一办法，只要别把两种增量粘进同一条字符串。
 
-`emit` 用的频道和 preload 里 `on` 听的是同一个 `IpcApi_Event`。事件名是 `ai.stream.chunk`，载荷里有 `topicId` 和这一小段 chunk。渲染进程的订阅者按话题过滤，只把属于当前页的增量合进消息。
+一个话题开在两个窗口里，就要两个推送器。窗口关了，缓冲丢掉，不再 send。
 
-## 16 毫秒里粘住什么
+## 在 Cherry Studio 里
 
-文本增量的类型是 `text-delta`，思考是 `reasoning-delta`，工具参数还在生成时是 `tool-input-delta`。同一类、同一块上的增量可以拼成一条更长的字符串。窗口关了，`wc.isDestroyed()` 为真，未发出的缓冲丢掉，不再 `send`。
-
-16 毫秒大约是一帧。人眼看到的仍是连续出字，IPC 次数少了一个数量级。
+这个类叫 `WebContentsListener`。id 是 `wc:窗口号:话题号`。以 `wc:` 开头的才是给界面的，写数据库的是另一个听众。真正过桥时调用 `wc.send(IpcApi_Event, 'ai.stream.chunk', payload)`，也就是上一课 `on` 听到的那条通道。
 
 ## 接下来
 
-谁创建这个听众、谁在流结束时写数据库，是调度台 [AiStreamManager](/boundary/stream-manager)。
-
-源码：`src/main/ai/streamManager/listeners/WebContentsListener.ts`。
+谁持有这些听众、谁在结束时写数据库，是 [14 调度台不生成文字](/boundary/stream-manager)。

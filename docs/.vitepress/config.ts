@@ -21,68 +21,68 @@ export default withMermaid(defineConfig({
     sidebar: [
       {
         text: '怎么用',
-        items: [{ text: '怎么读这份导航', link: '/start/how-to-read' }]
+        items: [{ text: '01 怎么读', link: '/start/how-to-read' }]
       },
       {
         text: '地图',
         items: [
-          { text: '三块代码', link: '/map/three-parts' },
-          { text: '一条消息的全程', link: '/map/one-message' }
+          { text: '02 两个进程', link: '/map/three-parts' },
+          { text: '03 一句话的旅程', link: '/map/one-message' }
         ]
       },
       {
         text: '界面',
         items: [
-          { text: '一个 Tab 一份路由', link: '/ui/router' },
-          { text: '列表契约', link: '/ui/contract' },
-          { text: 'MessageList 画什么', link: '/ui/message-list' },
-          { text: '消息骨架', link: '/ui/frame' },
-          { text: '内容块', link: '/ui/blocks' },
-          { text: '工具在界面上', link: '/ui/tools' },
-          { text: '流式文字', link: '/ui/stream' },
-          { text: 'Home 适配器', link: '/ui/home-adapter' }
+          { text: '04 标签不丢状态', link: '/ui/router' },
+          { text: '05 列表只收一个对象', link: '/ui/contract' },
+          { text: '06 列表不负责发送', link: '/ui/message-list' },
+          { text: '07 气泡先有框', link: '/ui/frame' },
+          { text: '08 一条回复是数组', link: '/ui/blocks' },
+          { text: '09 工具名决定卡片', link: '/ui/tools' },
+          { text: '10 只有活消息在变', link: '/ui/stream' },
+          { text: '11 页面把对象填满', link: '/ui/home-adapter' }
         ]
       },
       {
         text: '进程边界',
         items: [
-          { text: 'preload 与 IPC', link: '/boundary/preload' },
-          { text: '流推回窗口', link: '/boundary/webcontents' },
-          { text: 'AiStreamManager', link: '/boundary/stream-manager' }
+          { text: '12 一问一答和订阅', link: '/boundary/preload' },
+          { text: '13 十毫秒粘一次', link: '/boundary/webcontents' },
+          { text: '14 调度台不生成文字', link: '/boundary/stream-manager' }
         ]
       },
       {
         text: '模型调用',
         items: [
-          { text: 'UIMessage 与 parts', link: '/model/ui-message' },
-          { text: 'streamText 与 generateText', link: '/model/stream-text' },
-          { text: '为什么有 aiCore', link: '/model/why-aicore' },
-          { text: '一次调用怎么发出去', link: '/model/executor' },
-          { text: '换厂商不换调用方', link: '/model/provider' },
-          { text: '插件管道', link: '/model/plugins' },
-          { text: 'createAgent', link: '/model/create-agent' },
-          { text: '主进程里的循环', link: '/model/main-agent' },
-          { text: '一个小工具', link: '/model/one-tool' },
-          { text: '上下文快满了', link: '/model/context' }
+          { text: '15 消息是一组块', link: '/model/ui-message' },
+          { text: '16 边出字和一次拿全', link: '/model/stream-text' },
+          { text: '17 调用点和厂商分开', link: '/model/why-aicore' },
+          { text: '18 先改参数再请求', link: '/model/executor' },
+          { text: '19 换厂商只换登记', link: '/model/provider' },
+          { text: '20 加能力只加一个函数', link: '/model/plugins' },
+          { text: '21 一个循环就够了', link: '/model/create-agent' },
+          { text: '22 产品规则包在循环外', link: '/model/main-agent' },
+          { text: '23 工具是一份说明加一个函数', link: '/model/one-tool' },
+          { text: '24 发出去之前先变短', link: '/model/context' }
         ]
       },
       {
         text: 'Agent 运行时',
         items: [
-          { text: '和 Electron 无关的契约', link: '/runtime/contract' },
-          { text: '文本增量', link: '/runtime/text-delta' },
-          { text: '工具审批认门', link: '/runtime/approval' },
-          { text: '子 agent', link: '/runtime/subagent' },
-          { text: 'Pi 与 Claude Code', link: '/runtime/adapters' }
+          { text: '25 别人跑，我们观察', link: '/runtime/contract' },
+          { text: '26 只追加几个字', link: '/runtime/text-delta' },
+          { text: '27 执行前先问一句', link: '/runtime/approval' },
+          { text: '28 子任务是一条关系', link: '/runtime/subagent' },
+          { text: '29 两套循环', link: '/runtime/adapters' }
         ]
       },
       {
         text: '先认门',
         items: [
-          { text: 'MCP', link: '/later/mcp' },
-          { text: '知识库', link: '/later/knowledge' },
-          { text: '语音', link: '/later/voice' },
-          { text: '定时', link: '/later/schedule' }
+          { text: '30 工具可以来自外部进程', link: '/later/mcp' },
+          { text: '31 先建索引再当工具查', link: '/later/knowledge' },
+          { text: '32 语音只换出入口', link: '/later/voice' },
+          { text: '33 钟不知道要问模型', link: '/later/schedule' }
         ]
       }
     ]

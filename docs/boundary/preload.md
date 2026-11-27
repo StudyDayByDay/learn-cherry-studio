@@ -1,64 +1,58 @@
 ---
-title: preload 与 IPC
+title: 12 一问一答和订阅
 prev:
-  text: Home 适配器
+  text: 11 页面把对象填满
   link: /ui/home-adapter
 next:
-  text: 流推回窗口
+  text: 13 十毫秒粘一次
   link: /boundary/webcontents
 ---
 
-# preload 与 IPC
+# 12 一问一答和订阅
 
-React 里发请求，你习惯 `fetch('/api/chat')`。在 Electron 里，窗口和主进程不是 HTTP 的两端，它们用 IPC。preload 把这条通道收成两个函数，页面只碰这两个函数。
+> 这一课只加一件事：过桥只有两种方向。发送用一次调用，出字用订阅。
 
-## 一条桥，两种方向
+## 问题
 
-`src/preload/ipc.ts` 全文不到五十行：
+模型要好几秒，中间不断出字。如果发送的那个 Promise 要等整段回答才 resolve，气泡会一直空着。如果每个字都是一次新的请求，又没有「这一轮」的概念。
+
+## 最小做法
+
+桥上两个函数就够。所有订阅共用一条通道，再用事件名分发。
 
 ```ts
-const subscribers = new Map<string, Set<(payload: unknown) => void>>()
-let listening = false
+const listeners = new Map<string, Set<(data: unknown) => void>>()
 
-function dispatch(_e: IpcRendererEvent, name: string, payload: unknown) {
-  for (const callback of [...(subscribers.get(name) ?? [])]) callback(payload)
-}
-
-export const ipcApi = {
-  request: (route: string, input?: unknown, meta?: unknown): Promise<unknown> =>
-    ipcRenderer.invoke(IpcChannel.IpcApi_Request, route, input, meta),
-
-  on: (event: string, callback: (payload: unknown) => void): (() => void) => {
-    if (!listening) {
-      ipcRenderer.on(IpcChannel.IpcApi_Event, dispatch)
-      listening = true
-    }
-    const callbacks = subscribers.get(event) ?? new Set()
-    subscribers.set(event, callbacks)
-    const subscription = (payload: unknown) => callback(payload)
-    callbacks.add(subscription)
-    return () => {
-      callbacks.delete(subscription)
-      if (callbacks.size === 0 && subscribers.get(event) === callbacks) subscribers.delete(event)
-    }
+export const ipc = {
+  request(route: string, input: unknown) {
+    return ipcRenderer.invoke('request', route, input)
+  },
+  on(event: string, callback: (data: unknown) => void) {
+    const set = listeners.get(event) ?? new Set()
+    set.add(callback)
+    listeners.set(event, set)
+    ipcRenderer.on('event', (_e, name, data) => {
+      if (name === event) callback(data)
+    })
+    return () => set.delete(callback)
   }
 }
+
+// 发送：Promise 只表示「主进程答应开始了」
+await ipc.request('chat.send', { topicId, text })
+
+// 出字：持续进来
+ipc.on('ai.stream.chunk', (chunk) => appendToLiveMessage(chunk))
 ```
 
-`request` 是一问一答。渲染进程 `invoke`，主进程处理完 `return`，Promise 才结束。适合「把这条用户消息交出去」「把设置存上」。它不适合模型逐字回复，因为回复要等几秒，而且中间有很多片段。
+组件卸载时调用 `on` 返回的函数，避免窗口关了还在改 state。
 
-`on` 是订阅。所有事件共用一个 Electron 频道 `IpcApi_Event`，再用事件名分发。页面写 `on('ai.stream.chunk', handler)`，这个名字下的回调集合就多一个。返回的函数用来取消订阅，组件卸载时调用，避免窗口关了还在 setState。
+发送和出字是两条路。把它们塞进同一个 Promise，界面就没法边收边画。
 
-只监听一次 Electron 的 `on`，是因为同一个 `ipcRenderer` 上挂太多同名监听器会触发 MaxListeners 警告。业务上的多个订阅者放在 Map 里，由 `dispatch` 自己转发。
+## 在 Cherry Studio 里
 
-文件头写着：新增一种请求或一种事件，这个文件不用改。路由名和参数类型在共享的 schema 里。渲染进程另外有一层带类型的封装，把 `unknown` 收成具体类型。preload 只负责过桥。
-
-## 和发送的关系
-
-输入框发送时走 `request`，主进程答应「这轮已经开始」。随后的文字不走这个 Promise 的返回值，而走 `on` 收到的一串 `ai.stream.chunk`。下一课就是主进程里发出这些 chunk 的类。
+`src/preload/ipc.ts` 就是这两个函数，名字是 `request` 和 `on`。所有事件共用 `IpcApi_Event`，由一个 `dispatch` 按名字转发。新增一种请求不用改这个文件，路由名写在共享 schema 里。
 
 ## 接下来
 
-[流推回窗口](/boundary/webcontents) 看主进程怎样把 token 合并后再 `send` 给这个窗口。
-
-源码：`src/preload/ipc.ts`。类型化的调用封装在 `src/renderer/ipc`。
+一个字一次 `send` 会把窗口打满。[13 十毫秒粘一次](/boundary/webcontents) 在主进程里把增量粘起来。

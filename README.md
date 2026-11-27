@@ -1,8 +1,9 @@
 # 学 Cherry Studio
 
-给前端开发者的知识导航。对照旁边的 `agent/cherry-studio` 阅读。每一课在页面里把代码讲完，路径写在课的末尾。
+给前端开发者的知识导航。每一课只加一件事，用一段短代码讲完，再对上 Cherry Studio 里的名字。
 
 ```bash
+cd agent/learn-cherry-studio
 npm install
 npm run docs:dev
 ```

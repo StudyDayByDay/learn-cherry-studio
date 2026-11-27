@@ -1,66 +1,60 @@
 ---
-title: 列表契约
+title: 05 列表只收一个对象
 prev:
-  text: 一个 Tab 一份路由
+  text: 04 标签不丢状态
   link: /ui/router
 next:
-  text: MessageList 画什么
+  text: 06 列表不负责发送
   link: /ui/message-list
 ---
 
-# 列表契约
+# 05 列表只收一个对象
 
-首页、Agent 会话、历史记录都要画聊天气泡。如果每个页面复制一套列表，流式更新和虚拟滚动会修三遍。Cherry 把列表做成共享组件，页面只交一个对象进去。
+> 这一课只加一件事：列表不知道自己在哪个页面，它只渲染一份 state、actions、meta。
 
-## 三块，没有页面开关
+## 问题
 
-这个对象的形状是固定的：
+首页有删除和重新生成，Agent 会话没有。如果列表里写 `if (isHome)`，每加一个页面就加一个分支，流式更新也会复制一份。
 
-```ts
-export interface MessageListProviderValue {
-  state: MessageListState
-  actions: MessageListActions
-  meta: MessageListMeta
+## 最小做法
+
+页面把数据装进一个对象。组件只读这个对象。某个按钮没有，就不要传那个函数。
+
+```tsx
+type MessageListValue = {
+  state: {
+    messages: { id: string; parts: Part[] }[]
+    liveIds: string[]
+  }
+  actions: {
+    loadOlder?: () => void
+    regenerate?: (id: string) => void
+  }
+  meta: {
+    assistantName?: string
+  }
+}
+
+function MessageList() {
+  const { state, actions } = useContext(MessageListContext)
+  return state.messages.map((message) => (
+    <Bubble
+      key={message.id}
+      parts={message.parts}
+      onRegenerate={actions.regenerate && (() => actions.regenerate!(message.id))}
+    />
+  ))
 }
 ```
 
-`state` 是画得出来的数据。一条话题、消息数组、每条消息的 parts。`actions` 是用户能做的事，比如向上加载更早的消息、删除、重新生成。某个页面没有删除，就不要传 `deleteMessage`，按钮自己不出现。组件内部不写 `if (isHome)`。
+`onRegenerate` 没有函数时，气泡不画那个按钮。组件里没有页面名字。
 
-`meta` 是环境信息，不改变消息本身。助手头像、导出图片时用的文件名，放在这里。
+`liveIds` 把「还在写的消息」和历史分开。历史那几条的引用不变，打字时不必把上面几十条一起重渲染。这个字段下一课还会用到，这里先看见它在 state 里。
 
-和流式有关的字段在 `state` 里：
+## 在 Cherry Studio 里
 
-```ts
-export interface MessageListState {
-  topic: Topic
-  messages: MessageListItem[]
-  partsByMessageId: MessagePartRows
-  streamingLayers?: MessageStreamingLayers
-}
-
-export interface MessageStreamingLayers {
-  historyPartsByMessageId: MessagePartRows
-  liveMessageIds: readonly string[]
-}
-```
-
-`messages` 是有哪些气泡。`partsByMessageId` 是每个气泡里面的块：正文、思考、工具卡片。历史 parts 和「正在生成的那几条消息 id」分开，打字时只更新活着的那几条，不用把上面几十条历史消息的子树全部重渲染。
-
-想象这一轮回复的 id 是 `m2`：
-
-```text
-historyPartsByMessageId: { m1: [已经写完的正文] }
-liveMessageIds: ['m2']
-```
-
-`m2` 的正文还在变。`m1` 的 React 节点保持不动。
-
-## 页面只负责填这个对象
-
-共享组件从 Context 读这三块。首页有一个适配器把它填满，Agent 页有另一个。两边的按钮集合可以不同，列表组件是同一份。后面会看到首页适配器怎么填。
+这个对象叫 `MessageListProviderValue`，三块名字就是 `state`、`actions`、`meta`。正在写的消息放在 `streamingLayers.liveMessageIds`。首页和 Agent 页各有一个适配器来填它，列表组件只有一份。
 
 ## 接下来
 
-列表拿到这份数据之后画什么、不画什么，看 [MessageList 画什么](/ui/message-list)。
-
-源码：`src/renderer/components/chat/messages/types.ts` 里的这三个接口。
+[06 列表不负责发送](/ui/message-list) 说明这个组件拿到对象之后做什么，以及输入框为什么不在里面。

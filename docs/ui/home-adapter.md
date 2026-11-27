@@ -1,62 +1,53 @@
 ---
-title: Home 适配器
+title: 11 页面把对象填满
 prev:
-  text: 流式文字
+  text: 10 只有活消息在变
   link: /ui/stream
 next:
-  text: preload 与 IPC
+  text: 12 一问一答和订阅
   link: /boundary/preload
 ---
 
-# Home 适配器
+# 11 页面把对象填满
 
-共享列表不抓数据。首页用一个 hook，把话题、消息、按钮收成上一课的那个 `{ state, actions, meta }`，再交给 Provider。Agent 会话有自己的 hook，返回的形状相同，里面的按钮可以少一截。
+> 这一课只加一件事：页面负责把上一课的对象填上，列表仍然不抓数据。
 
-## 页面数据从参数进来
+## 问题
+
+列表已经不写 `isHome`。那首页的删除、重新生成、助手头像从哪来？如果列表自己发请求，Agent 页就会被首页的接口拖住。
+
+## 最小做法
+
+页面用一个函数，把已经查到的数据翻译成列表要的对象。
 
 ```tsx
-export function useHomeMessageListProviderValue({
-  topic,
-  assistant,
-  messages,
-  partsByMessageId,
-  streamingLayers,
-  isInitialLoading = false,
-  hasOlder = false,
-  loadOlder
-}: HomeMessageListParams): MessageListProviderValue {
-  // ...
-  return useMemo(() => ({ state, actions, meta }), [actions, meta, state])
+function useHomeList(topic: Topic, messages: Message[]): MessageListValue {
+  const write = useChatWrite()
+  return {
+    state: {
+      messages,
+      liveIds: messages.filter((message) => message.streaming).map((message) => message.id)
+    },
+    actions: {
+      loadOlder: () => write.loadOlder(topic.id),
+      regenerate: (id) => write.regenerate(id)
+    },
+    meta: {
+      assistantName: topic.assistant.name,
+      exportFileName: topic.name
+    }
+  }
 }
 ```
 
-调用方已经按 `topic.id` 拿到了消息。适配器不再发一次「把消息查出来」的请求。它做的是翻译：把首页特有的能力装进 `actions`。
+调用方先按 `topic.id` 把消息查出来，再传进来。适配器不再发「把消息查出来」的请求。它做的是改名和接线。
 
-`meta` 用助手资料和话题名：
+Agent 页可以复用同一个列表，只是不传 `regenerate`。按钮于是不出现。两个页面的差别停在这个函数里。
 
-```tsx
-const meta = useMemo<MessageListMeta>(
-  () => ({
-    selectionLayer: true,
-    userProfile: headerCapabilities.userProfile,
-    assistantProfile: assistant
-      ? { name: assistant.name, avatar: assistant.avatarSrc ?? assistant.emoji }
-      : undefined,
-    assistantAvatarSources,
-    imageExportFileName: topic.name
-  }),
-  [assistant, assistantAvatarSources, headerCapabilities.userProfile, topic.name]
-)
-```
+## 在 Cherry Studio 里
 
-导出图片时的文件名用话题标题。头像用助手的图片或 emoji。这些不影响消息正文，所以在 `meta`。
-
-`actions` 里是首页允许的操作：向上翻页用参数里的 `loadOlder`，编辑、删除、换分支、重新生成，各自转到聊天写入接口。某个操作在捕获图片的模式下不该出现，适配器就传 `undefined`。列表看到没有这个函数，就不渲染按钮。
-
-hook 有九百多行，因为首页按钮多。主线只看三件事：参数是页面数据，返回值是契约，按钮是函数而不是布尔开关。
+首页的函数叫 `useHomeMessageListProviderValue`。参数里有 `messages`、`partsByMessageId`、`streamingLayers`、`loadOlder`。返回 `{ state, actions, meta }`。助手头像和导出文件名在 `meta`。文件很长，因为按钮多。形状就是上面这个函数。
 
 ## 接下来
 
-界面这条线到这里接上了。下一课离开 React，看渲染进程怎样把请求送进主进程：[preload 与 IPC](/boundary/preload)。
-
-源码：`src/renderer/pages/home/messages/homeMessageListAdapter.tsx` 的 `useHomeMessageListProviderValue`。
+界面这条线到这里接上了。下一课离开 React，看网页怎样把一句话送进主进程：[12 一问一答和订阅](/boundary/preload)。

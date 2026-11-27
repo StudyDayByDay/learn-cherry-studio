@@ -1,48 +1,54 @@
 ---
-title: 消息骨架
+title: 07 气泡先有框
 prev:
-  text: MessageList 画什么
+  text: 06 列表不负责发送
   link: /ui/message-list
 next:
-  text: 内容块
+  text: 08 一条回复是数组
   link: /ui/blocks
 ---
 
-# 消息骨架
+# 07 气泡先有框
 
-一条消息在界面上先有框，再有内容。框负责「这是谁说的、操作栏在哪」。内容负责「里面那些块怎么排」。改气泡圆角去框，改工具卡片去内容。
+> 这一课只加一件事：框负责「谁说的、按钮在哪」，框里面再交给内容。
 
-## 框把正文交给下一块
+## 问题
 
-`MessageContent` 很短。它处理 @某个模型的那一行提示，然后把整条消息交给 parts 渲染器：
+改圆角时，你不想碰到工具卡片的逻辑。改搜索卡片时，你不想碰到头像。如果一个组件同时画头、正文、按钮和工具，两边的修改会互相踩。
+
+## 最小做法
+
+框只拼三块。正文是一个孩子，框不解析 Markdown。
 
 ```tsx
-const MessageContent: React.FC<Props> = ({ message, hoistAttachments }) => {
+function MessageFrame({ message, actions }) {
   return (
-    <>
-      {!isEmpty(message.mentions) && (
-        <Flex className="mb-2.5 flex-wrap gap-2">
-          {message.mentions?.map((model) => (
-            <span key={createUniqueModelId(model.provider, model.id)} className="text-primary">
-              {'@' + model.name}
-            </span>
-          ))}
-        </Flex>
-      )}
-      <MessagePartsRenderer message={message} hoistAttachments={hoistAttachments} />
-    </>
+    <article data-role={message.role}>
+      <header>
+        <Avatar name={message.author} />
+        <span>{message.author}</span>
+      </header>
+      <MessageContent message={message} />
+      <footer>
+        {actions.regenerate && <button onClick={() => actions.regenerate(message.id)}>重新生成</button>}
+      </footer>
+    </article>
   )
+}
+
+function MessageContent({ message }) {
+  return <Parts message={message} />
 }
 ```
 
-`mentions` 是用户在输入框里点名的模型，画成 `@模型名`。`hoistAttachments` 为真时，附件从正文流里提出去，放到框的另一块区域，避免图片夹在文字中间把操作栏顶乱。
+用户消息和助手消息的对齐不同，所以 `data-role` 交给样式。按钮仍来自上一课的 `actions`，没有函数就不画。
 
-`MessageFrame` 在用户消息和助手消息两种布局里都会用到 `MessageHeader` 和 `MessageContent`。头里是头像、模型名、时间。用户消息和助手消息的对齐不同，所以框有分支。分支分的是布局，不是「要不要调用模型」。
+`MessageContent` 故意这么薄。它的存在是一条边界：框的文件里看不到 part 的类型。
 
-底部的复制、重试、翻译是 `MessageMenuBar`。那些按钮调用的是列表契约里的 `actions`。骨架知道按钮长什么样，不知道重新生成时主进程会做什么。
+## 在 Cherry Studio 里
+
+`MessageFrame` 在两种布局里都会用 `MessageHeader` 和 `MessageContent`。`MessageContent` 画完 @模型 的提示之后，把消息交给 `MessagePartsRenderer`。复制、重试在 `MessageMenuBar`，调用的是 actions。
 
 ## 接下来
 
-`MessagePartsRenderer` 拿到消息之后，按 part 的类型分发。这是 [内容块](/ui/blocks)。
-
-源码：`frame/MessageContent.tsx`、`frame/MessageFrame.tsx`。
+`Parts` 里面不是一段字符串。[08 一条回复是数组](/ui/blocks) 把数组画出来。

@@ -1,43 +1,43 @@
 ---
-title: 上下文快满了
+title: 24 发出去之前先变短
 prev:
-  text: 一个小工具
+  text: 23 工具是一份说明加一个函数
   link: /model/one-tool
 next:
-  text: 和 Electron 无关的契约
+  text: 25 别人跑，我们观察
   link: /runtime/contract
 ---
 
-# 上下文快满了
+# 24 发出去之前先变短
 
-模型能读的历史有上限。聊了几十轮，再把全部网页搜索结果塞回去，请求会被拒绝，或者默默丢掉前面的内容。压缩做的事是：把较早的消息收成一段摘要，留下最近几轮原文，然后继续。
+> 这一课只加一件事：上下文快满时，把较早的模型消息收成一段摘要，最近几轮保持原文。窗口上的旧气泡可以还在。
 
-## 压缩的是发给模型的那一份
+## 问题
+
+课 15 说过，发给模型的历史和画在屏幕上的消息不是同一份。屏幕上可以无限往上翻。模型能读的长度有上限。把几十轮搜索结果全塞回去，请求会被拒绝。
+
+## 最小做法
+
+压缩函数吃的是模型消息，吐的也是模型消息。没有变化时返回原数组，调用方因此知道不用落库。
 
 ```ts
-export async function compactModelMessages(
-  messages: ModelMessage[],
-  model: LanguageModel,
-  options: PlanCompactionOptions & SummarizeMessagesOptions
-): Promise<ModelMessage[]> {
-  const ir = fromModelMessages(messages)
-  const result = await compactHistory(ir, createCompressionAdapter(model, maxOutputTokens), compactOptions)
-  return result === ir ? messages : toModelMessages(result)
+async function compact(messages: ModelMessage[], summarize: (old: ModelMessage[]) => Promise<string>) {
+  if (tokenCount(messages) < LIMIT) return messages
+  const head = messages.slice(0, -6)
+  const tail = messages.slice(-6)
+  const summary = await summarize(head)
+  return [{ role: 'user', content: `Earlier conversation:\n${summary}` }, ...tail]
 }
 ```
 
-参数和返回值都是 `ModelMessage[]`，也就是上一课说的「即将发给模型的历史」，不是窗口上那份带折叠状态的 `UIMessage`。窗口里的旧气泡可以还在，用户往上翻仍看得到。变短的是下一次请求带上的副本。
+摘要被放成一条 user 消息。尾巴如果也以 user 开头，数组里会有连续两条 user。各家适配器会处理：有的把同角色合并，有的接受这种排列。窗口不读这份数组，所以用户仍能看见原来的气泡。界面上最多放一个标记：「上面的内容已摘要」。
 
-`compactHistory` 先决定保留尾巴的哪几轮，再请一个模型把丢掉的部分写成摘要。摘要被插成一条 `user` 消息，这是 Claude Code 的习惯。尾巴如果也以 user 开头，数组里会连续两条 user。AI SDK 的各家适配器会自己处理：Anthropic 把同角色合并，OpenAI 接受这种排列。注释把这件事写明了，避免你看到两条 user 以为是 bug。
+什么时候调用 `compact`，是调度台的决定。算法在这里，时机在课 14 的发布者旁边。
 
-没有东西需要压时，`compactHistory` 返回原来的内部表示。函数就返回当初传进来的数组引用。调用方用 `result === messages` 判断要不要写数据库。引用没变，就跳过一次落库。
+## 在 Cherry Studio 里
 
-界面上对应的是 `CompactBlock`。它只标记「上面的历史被摘要过」。摘要的正文在发给模型的那条消息里，不一定原样铺在气泡上。
-
-主进程的流调度另有一个 `context/compaction.ts`，决定这一轮聊天线要不要调用上面的函数。算法在 `aiCore`，时机在调度台。这一课把位置认清即可，截断、卸载的邻近文件可以以后再读。
+函数名是 `compactModelMessages`。它把消息转成内部表示，调用 `compactHistory`，没有变化时用引用相等跳过落库。摘要风格和上面一样，是一条 user。界面块叫 `CompactBlock`。
 
 ## 接下来
 
-普通聊天的循环到这里就闭合了。编码助手不走这套 `ToolLoopAgent`，它们有自己的循环。Cherry 用一份契约把它们收成同样的消息：[和 Electron 无关的契约](/runtime/contract)。
-
-源码：`packages/aiCore/src/core/context/compaction.ts` 的 `compactModelMessages`。
+到这里，自己跑的那条循环闭合了。编码助手自己有循环。下一课开始只观察它们：[25 别人跑，我们观察](/runtime/contract)。

@@ -1,52 +1,53 @@
 ---
-title: streamText 与 generateText
+title: 16 边出字和一次拿全
 prev:
-  text: UIMessage 与 parts
+  text: 15 消息是一组块
   link: /model/ui-message
 next:
-  text: 为什么有 aiCore
+  text: 17 调用点和厂商分开
   link: /model/why-aicore
 ---
 
-# streamText 与 generateText
+# 16 边出字和一次拿全
 
-调用模型只有两种等法。聊天要第一种，因为用户在等字出现。给话题起标题可以用第二种，因为没有人盯着那几个字逐个蹦出来。
+> 这一课只加一件事：聊天用流，不需要边看边出的调用用一次拿全。参数几乎一样。
 
-## 流，和一次拿全
+## 问题
 
-`streamText` 立刻返回一个流。文本增量、工具调用、结束原因陆续到达。Cherry 的窗口听众消费的就是这个流里的 chunk。第一个字到了就可以画，不用等整段结束。
+给话题起标题只要六个字，没有人盯着它逐个蹦出来。如果标题也走聊天那条流，就要为它接听众、处理半截字符串。聊天如果等整段结束再画，用户会以为卡住了。
 
-`generateText` 把连接拿住，直到模型说结束，然后把整段文本、用量、结束原因一起返回。适合标题、摘要、压缩上下文时那一次内部调用。调用方写成 `const { text } = await generateText(...)`。
+## 最小做法
 
-两边的参数很像：哪个模型、消息数组、有哪些工具、温度是多少。差别是返回值。流式返回的对象要继续读，非流式返回的是最终结果。
-
-Cherry 没有重写这两个函数。执行器在插件跑完之后原样调用 SDK：
+两个函数，参数相同，返回不同。
 
 ```ts
-return this.pluginEngine.executeStreamWithPlugins(
-  'streamText',
-  params,
-  (resolvedModel, transformedParams, streamTransforms) => {
-    const experimental_transform =
-      params?.experimental_transform ?? (streamTransforms.length > 0 ? streamTransforms : undefined)
+type Ask = {
+  model: string
+  messages: { role: string; content: string }[]
+}
 
-    return _streamText({
-      ...transformedParams,
-      model: this.wrapModel(resolvedModel, wrapModel),
-      experimental_transform
-    })
-  }
-)
+async function streamText(ask: Ask, onDelta: (text: string) => void) {
+  const res = await fetch(modelUrl, { body: JSON.stringify(ask) })
+  for await (const delta of readSse(res)) onDelta(delta)
+}
+
+async function generateText(ask: Ask) {
+  let text = ''
+  await streamText(ask, (delta) => {
+    text += delta
+  })
+  return text
+}
 ```
 
-`_streamText` 就是 `import { streamText as _streamText } from 'ai'`。`executeStreamWithPlugins` 先让插件改参数、解析模型，回调里才是真正的 SDK 调用。`experimental_transform` 是流上的变换，比如把厂商特有的思考字段收成统一的 reasoning part。没有插件提供变换时，它是 `undefined`，SDK 按原始流输出。
+聊天把 `onDelta` 接到课 14 的 `publish`。标题写 `const title = await generateText(...)`。
 
-`generateText` 的包装一样，最后调用 `_generateText`，只是没有流变换这一步。
+真实 SDK 里 `generateText` 不是用 `streamText` 拼出来的，但用法就是这样：一个边吐边交，一个等结束。Cherry 没有重写它们，执行器在插件跑完后调用 SDK 原函数。
 
-主进程的 `Agent.generate` 用一个参数在两种模式间切换：`mode: 'generate' | 'stream'`。用户看得见的聊天走 stream。
+## 在 Cherry Studio 里
+
+函数名就是 `streamText` 和 `generateText`，从 `ai` 包引进来。执行器里写成 `_streamText`，表示这是原函数。主进程的 `Agent.generate` 用 `'generate' | 'stream'` 在两种模式间切换。用户看得见的聊天走 stream。
 
 ## 接下来
 
-页面如果自己 `import { streamText } from 'ai'`，每家厂商的客户端都会漏进组件。[为什么有 aiCore](/model/why-aicore) 说明这层包装存在的原因。
-
-源码：`packages/aiCore/src/core/runtime/executor.ts` 的 `streamText` 与 `generateText`。
+如果每个页面自己 import 这两函数，厂商差异会漏进组件。[17 调用点和厂商分开](/model/why-aicore) 中间加一层。

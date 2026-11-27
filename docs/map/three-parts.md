@@ -1,52 +1,48 @@
 ---
-title: 三块代码
+title: 02 两个进程
 prev:
-  text: 怎么读这份导航
+  text: 01 怎么读
   link: /start/how-to-read
 next:
-  text: 一条消息的全程
+  text: 03 一句话的旅程
   link: /map/one-message
 ---
 
-# 三块代码
+# 02 两个进程
 
-网页前端里，React 页面和接口通常是两台机器上的两份程序。Cherry Studio 是 Electron 桌面应用，这两份程序在同一台电脑上，仍然分成两个进程。
+> 这一课只加一件事：画界面的进程，和拿着密钥调模型的进程，是分开的。
 
-## 为什么要拆开
+## 问题
 
-渲染进程就是窗口里的 Chromium，跑你熟悉的 React。用户能在开发者工具里看到它。如果模型的 API Key 放在这里，打开调试工具就能读走。文件、数据库、子进程也不该由网页随意碰。
+普通网页里，React 可以 `fetch` 自己的后端。桌面应用如果也让 React 直接请求 OpenAI，API Key 会打进前端包，打开开发者工具就能看见。读本地文件、开子进程，也不该由网页随意做。
 
-主进程是 Node。它创建窗口，保管密钥，连接模型，读写 SQLite。窗口里的页面要做事，必须请主进程代劳。
+## 最小做法
 
-中间还有一层 preload。它跑在窗口里，但能使用少量 Electron API，负责把「网页可以调用的函数」交到 `window` 上。页面不直接 `import` 主进程的代码。
+同一台电脑上跑两个程序。窗口里是网页，后面是 Node。网页只能喊两个函数：
 
-可以把它想成：
-
-```text
-渲染进程   React 界面          看得见的气泡、输入框
-preload    一条窄桥            页面发出的请求和订到的事件
-主进程     Node                密钥、数据库、模型请求
-packages   被主进程引用的库    模型调用和 agent 契约，本身不画按钮
-```
-
-仓库入口也写在主进程上。根目录 `package.json` 里是：
-
-```json
-{
-  "main": "./out/main/main.js"
+```ts
+// 网页里能用的全部能力
+const bridge = {
+  ask(route: string, input: unknown) {
+    return node.invoke(route, input) // 一问一答
+  },
+  listen(event: string, onData: (data: unknown) => void) {
+    return node.subscribe(event, onData) // 持续推送
+  }
 }
+
+// 密钥只活在 Node 里
+node.handle('chat.send', async ({ text, apiKey }) => {
+  return fetch(modelUrl, { headers: { Authorization: apiKey }, body: text })
+})
 ```
 
-`electron .` 先启动这个文件，再由它打开窗口，窗口加载渲染进程打出来的页面。
+网页传入的是「用户说了什么」和「选了哪个模型」。`apiKey` 出现在 Node 的处理函数里，不出现在 React 组件里。
 
-## 和这门课的关系
+## 在 Cherry Studio 里
 
-界面课只待在 `src/renderer`。进程边界课看 preload 怎样把流送回来。模型课看 `packages/aiCore`，以及主进程里把这个包用起来的 `Agent`。`packages` 可以单独读，因为它不依赖窗口。
-
-你在设置页填的 Key 留在主进程。React 组件拿到的是「当前选中的模型 id」，不是密钥本身。
+窗口是渲染进程，`src/renderer` 里的 React。Node 是主进程，`src/main`。中间的桥叫 preload，下一组课会把 `ask` 和 `listen` 写成真实的 `request` 和 `on`。模型包在 `packages/`，由主进程引用。根目录 `package.json` 的 `"main"` 指向主进程入口，应用从那里启动，再打开窗口。
 
 ## 接下来
 
-知道三块各自干什么之后，用一句话把它们串起来。[一条消息的全程](/map/one-message) 跟着「今天北京天气怎么样」走一遍，仍然不展开实现细节。
-
-源码位置：仓库根目录 `package.json` 的 `main` 字段。目录就是 `src/renderer`、`src/preload`、`src/main`、`packages`。
+[03 一句话的旅程](/map/one-message) 用一句问天气，把这两个进程之间的来回走完。

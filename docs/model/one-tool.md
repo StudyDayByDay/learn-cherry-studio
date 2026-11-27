@@ -1,48 +1,50 @@
 ---
-title: 一个小工具
+title: 23 工具是一份说明加一个函数
 prev:
-  text: 主进程里的循环
+  text: 22 产品规则包在循环外
   link: /model/main-agent
 next:
-  text: 上下文快满了
+  text: 24 发出去之前先变短
   link: /model/context
 ---
 
-# 一个小工具
+# 23 工具是一份说明加一个函数
 
-模型不会自己上网。它只能在回复里说「我要调用名为 web_search 的工具，参数是这句话」。主进程里必须有一份同名实现：读参数，发出请求，把结果写成工具 part。网页搜索足够小，又能把这三件套看全。
+> 这一课只加一件事：工具给模型一段说明和一份参数格式，执行是主进程里的函数。
 
-## 给模型看的说明
+## 问题
 
-```ts
-export const WEB_SEARCH_DESCRIPTION =
-  'Search the web for current or uncertain facts. Retry in the likely source language; cite with [cite:id].'
-```
+模型不会上网。它只能在回复里写「调用 web_search，参数是这句话」。没有同名函数，循环就无事可做。函数如果搜失败就抛异常，循环分不清「没有结果」和「搜索坏了」，会一直重试。
 
-这段字符串进工具定义的 `description`。模型靠它决定「天气这种实时问题该不该搜」。写得含糊，模型就会少调用或者乱调用。参数用 zod 描述，SDK 会把它变成 JSON Schema 发给模型。模型返回的参数若对不上 schema，调用在执行前就失败。
+## 最小做法
 
-失败也不要抛成一个让循环崩溃的异常。搜索挂了和「搜了但没有结果」必须能区分：
+说明给模型看。函数给循环调用。失败返回一个对象。
 
 ```ts
-export const webLookupErrorSchema = z.object({
-  error: z.string(),
-  retryable: z.boolean().optional(),
-  terminal: z.literal(true).optional()
-})
+const webSearch = {
+  description: 'Search the web for current facts.',
+  parameters: { query: 'string' },
+  async run({ query }: { query: string }) {
+    try {
+      const hits = await search(query)
+      return { hits }
+    } catch (error) {
+      return { error: String(error), retryable: true }
+    }
+  }
+}
 ```
 
-成功返回结果数组。失败返回 `{ error, retryable }`。`retryable` 告诉模型这是网络抖动，可以再试一次。配置里根本没有搜索引擎时，错误是永久性的，说明文字会要求模型告诉用户去设置里补，而不是无限重试。用户取消是例外，取消要继续把异常抛出去，循环才停得下来。
+`description` 决定模型会不会在问天气时点它。`parameters` 对不上，调用在执行前就失败。`retryable: true` 表示可以再试一次。设置里根本没有搜索引擎时，应返回 `retryable: false`，并让模型告诉用户去设置里补，而不是无限循环。
 
-同一份查找函数被两条运行时使用：AI SDK 的内置工具，以及 Claude Code 那条桥。两边的差别只是参数包装，查网页的逻辑在 `webLookup.ts`。
+用户点了取消，则要继续抛出，循环才停得下来。取消是唯一还往外抛的情况。
 
-## 结果怎样回到气泡
+执行完，循环把返回值放进工具块的 `output`。课 09 的卡片按名字 `web_search` 把 `hits` 画出来。说明、参数、函数、卡片，名字对上，链就通了。
 
-执行完，SDK 把输出放进工具 part 的 `output`，`state` 变成 `output-available`。调度台把这个 part 推给窗口。界面课的 `chooseTool` 看到 `web_search`，画出搜索卡片。卡片读的就是这份 `output`。
+## 在 Cherry Studio 里
 
-四件事因此连在一起：description 给模型看，zod 约束参数，主进程函数执行，渲染进程按名字画卡片。缺了执行，卡片永远在加载。缺了卡片，用户只能看见一段 JSON。
+网页搜索的说明是 `WEB_SEARCH_DESCRIPTION`，失败形状是 `webLookupErrorSchema`。同一份查找函数给 AI SDK 的工具和 Claude Code 的桥共用。界面上 `chooseTool` 看到 `web_search` 画搜索卡。
 
 ## 接下来
 
-对话变长以后，这些工具结果也会把上下文撑满。[上下文快满了](/model/context) 说明发出去之前会先压缩。
-
-源码：`src/main/ai/tools/webLookup.ts`。界面卡片在 `messages/tools/chooseTool.tsx`。
+搜回来的结果会把上下文越撑越长。[24 发出去之前先变短](/model/context) 在下一次请求前把旧消息收成摘要。

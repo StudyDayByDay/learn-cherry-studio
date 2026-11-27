@@ -1,43 +1,52 @@
 ---
-title: 为什么有 aiCore
+title: 17 调用点和厂商分开
 prev:
-  text: streamText 与 generateText
+  text: 16 边出字和一次拿全
   link: /model/stream-text
 next:
-  text: 一次调用怎么发出去
+  text: 18 先改参数再请求
   link: /model/executor
 ---
 
-# 为什么有 aiCore
+# 17 调用点和厂商分开
 
-设置页里可以选 OpenAI、Anthropic、Gemini、DeepSeek，也可以填一个兼容接口的地址。对聊天页来说，这些都应该是「一个模型 id」。如果每种厂商在 React 里各写一个客户端，换厂商就要改界面。
+> 这一课只加一件事：聊天代码只说模型 id。哪家厂商、密钥是什么，留在单独的一层。
 
-`packages/aiCore` 把这件事收成一个包。界面和主进程业务只依赖它的运行时，不依赖某一家的 SDK。
+## 问题
 
-## 两层
+设置里可以选 OpenAI、Anthropic，或者一个兼容地址。如果气泡组件里写着 `new OpenAI({ apiKey })`，每加一家厂商就要改界面，Key 也会靠近渲染进程。
 
-包自己的说明把结构收成：
+## 最小做法
 
-- `models`：给定厂商 id 和密钥，创建出 SDK 要的模型对象。
-- `runtime`：拿着这个模型去跑 `streamText` / `generateText`，并允许插件在请求前后插手。
-
-聊天代码写的是「用这个 providerId 和 modelId 跑一段流」。OpenAI 的 `baseURL`、Anthropic 的请求头，留在 models 层。你以后要加一家厂商，改的是注册，不是消息列表。
-
-这个包还做第三件事：把单次调用升级成会自己跑工具的 agent。文件 `createAgent.ts` 的开头是：
+调用点只留三样东西。厂商表在别处。
 
 ```ts
-import { ToolLoopAgent } from 'ai'
-import { createExecutor } from '../runtime'
+type Provider = {
+  id: string
+  stream(modelId: string, messages: unknown[]): AsyncIterable<string>
+}
+
+const providers: Record<string, Provider> = {}
+
+function register(provider: Provider) {
+  providers[provider.id] = provider
+}
+
+function chat(providerId: string, modelId: string, messages: unknown[]) {
+  return providers[providerId].stream(modelId, messages)
+}
 ```
 
-单次 `streamText` 在模型说出「我要调用搜索」时，结果里只有工具调用，没有最终回答。`ToolLoopAgent` 负责把工具结果送回去再问一次。`createAgent` 负责把 Cherry 的厂商解析和插件接到这个类上。那一课会把函数走完。现在先记住层次：厂商在下，一次调用在中，工具循环在上。
+`chat('openai', 'gpt-4o-mini', messages)` 和 `chat('deepseek', 'deepseek-chat', messages)` 是同一行代码，换的是第一个参数。兼容接口也是一个 `id`，它的 `stream` 内部把地址设成用户填的 baseURL。
 
-## 密钥不进这个包的界面侧
+密钥放在 `register` 时的闭包里，不出现在 `chat` 的参数里。渲染进程最多传 `providerId` 和 `modelId`，主进程再去表里找。
 
-`aiCore` 接收 `providerSettings`，里面可以有 Key。调用它的是主进程。渲染进程只传模型 id，主进程再把设置填上。所以即使用了统一接口，Key 仍然不出现在 React 的打包结果里。
+这层还有一件以后要做的事：把「调用一次」升级成「模型要工具就继续」。那是课 21。这一课先把调用点和厂商拆开。
+
+## 在 Cherry Studio 里
+
+这层是 `packages/aiCore`。`models` 负责创建某家的模型对象，`runtime` 负责拿着它去跑 `streamText`。界面不 import `@ai-sdk/openai`。
 
 ## 接下来
 
-一次调用具体怎么从「模型 id 字符串」变成 SDK 的 `streamText`，看 [一次调用怎么发出去](/model/executor)。
-
-源码：`packages/aiCore/README.md` 和 `packages/aiCore/src/core/agents/createAgent.ts` 的文件头。
+注册之后，一次调用内部还要先改参数。[18 先改参数再请求](/model/executor) 把这个顺序写出来。

@@ -1,46 +1,55 @@
 ---
-title: AiStreamManager
+title: 14 调度台不生成文字
 prev:
-  text: 流推回窗口
+  text: 13 十毫秒粘一次
   link: /boundary/webcontents
 next:
-  text: UIMessage 与 parts
+  text: 15 消息是一组块
   link: /model/ui-message
 ---
 
-# AiStreamManager
+# 14 调度台不生成文字
 
-一次聊天在主进程里同时有好几件要做的事：问模型、把字推给窗口、写进数据库、记一笔用量。这些事如果都写在 React 里，或者都写在调用模型的那个函数里，任何一边改动都会扯到另一边。调度台把「这轮流的生命周期」单独拿出来。
+> 这一课只加一件事：一轮对话有一个发布者。它把片段交给听众，自己不调用模型。
 
-## 它调度，不生成
+## 问题
 
-`streamManager/index.ts` 导出的就是这些角色：
+一次聊天同时要做三件事：把字推给窗口、写进数据库、记下用量。如果这三件都写在「调用模型」的函数里，换一种存储就要改模型代码。如果写在 React 里，数据库逻辑就进了界面。
+
+## 最小做法
+
+模型侧只生产片段。调度台把它交给所有听众。
 
 ```ts
-export { AiStreamManager } from './AiStreamManager'
-export { WebContentsListener } from './listeners/WebContentsListener'
-export { PersistenceListener } from './listeners/PersistenceListener'
-export { startAgentSessionRun } from './api/startAgentSessionRun'
+type Chunk = { topicId: string; text: string; done?: boolean }
+
+type Listener = {
+  onChunk(chunk: Chunk): void
+  onDone(topicId: string): void
+}
+
+class StreamDesk {
+  private listeners: Listener[] = []
+
+  attach(listener: Listener) {
+    this.listeners.push(listener)
+  }
+
+  publish(chunk: Chunk) {
+    for (const listener of this.listeners) listener.onChunk(chunk)
+    if (chunk.done) for (const listener of this.listeners) listener.onDone(chunk.topicId)
+  }
+}
 ```
 
-`AiStreamManager` 记住这一轮的状态：还在跑、暂停了、还是已经结束。模型吐出一个 chunk，它转给所有听众。
+窗口推送是一个听众，落库是另一个。模型函数只调用 `publish`。它不知道窗口和数据库的存在。
 
-听众各干各的：
+调度台还要记住这轮是在跑、暂停了，还是已经结束。那是状态，不是生成。
 
-| 听众 | 收到 chunk 之后 |
-| --- | --- |
-| `WebContentsListener` | 合并后推给窗口 |
-| `PersistenceListener` | 把助手消息写进存储 |
-| 追踪听众 | 把这一轮交给观测系统 |
+## 在 Cherry Studio 里
 
-普通聊天的历史从 `PersistentChatContextProvider` 来。Agent 会话从 `AgentChatContextProvider` 来。两者都是「把数据库里的消息整理成这一轮要带上的上下文」。调度台不关心消息存在哪张表。
-
-`startAgentSessionRun` 是启动一次 Agent 会话的入口。它仍然把运行登记到这个调度台，这样窗口和落库不用为 Agent 再写一套。
-
-`AiStreamManager.ts` 有两千多行，因为暂停、重连、多模型、错误分类都在里面。读主线时把它当成一个发布者：上游是即将讲到的 `Agent`，下游是上面这些听众。它不选择 OpenAI 还是 Anthropic，也不执行工具。
+这个发布者叫 `AiStreamManager`。窗口听众是上一课的 `WebContentsListener`，落库是 `PersistenceListener`。普通聊天和 Agent 会话用不同的上下文提供者去取历史，调度台不关心消息存在哪张表。文件很长，因为暂停和错误也在里面。职责就是 `publish`。
 
 ## 接下来
 
-窗口上看到的一块块内容，在协议里叫什么，从 [UIMessage 与 parts](/model/ui-message) 开始。这是从前端数据走进模型数据的一步。
-
-源码：`src/main/ai/streamManager/`。调度台本体是 `AiStreamManager.ts`。
+听众收到的片段，在数据上是什么形状？[15 消息是一组块](/model/ui-message) 给它一个名字。

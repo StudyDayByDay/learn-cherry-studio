@@ -1,52 +1,49 @@
 ---
-title: 和 Electron 无关的契约
+title: 25 别人跑，我们观察
 prev:
-  text: 上下文快满了
+  text: 24 发出去之前先变短
   link: /model/context
 next:
-  text: 文本增量
+  text: 26 只追加几个字
   link: /runtime/text-delta
 ---
 
-# 和 Electron 无关的契约
+# 25 别人跑，我们观察
 
-普通聊天的循环是 Cherry 自己用 `ToolLoopAgent` 跑的。编码助手是另一条路：Pi 或 Claude Code 自己拥有循环、工具和上下文压缩。窗口不能为每家写一套气泡。两边都要变成「一条 `UIMessage`，里面是 parts」。
+> 这一课只加一件事：外部 agent 自己跑循环。我们规定它的事件最后必须变成课 15 的那条消息。
 
-`packages/agent-runtime` 规定这张脸。它不启动模型，也不知道 Electron。
+## 问题
 
-## 线程和消息
+Pi 和 Claude Code 已经会调用工具、压缩上下文。如果再套一层课 21 的 `while`，就有两个循环在抢同一段对话。界面如果为每家写一套气泡，课 08 的 switch 会分裂。
+
+## 最小做法
+
+不启动它们的模型。只规定观察结果的形状。
 
 ```ts
-export interface Thread {
-  readonly backendId: BackendId
-  readonly id: ThreadId
+type Thread = { backend: 'pi' | 'claude'; id: string }
+
+type RuntimeMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  parts: Part[]
+  partial: boolean
 }
 
-export type RuntimeMessage = UIMessage<{
-  completeness: Completeness
-  inputId?: InputId
-  error?: RuntimeError
-}>
+type Observer = {
+  thread: Thread
+  onMessage(message: RuntimeMessage): void
+}
 ```
 
-`Thread` 是某个后端里的一次会话。`backendId` 区分这是 Pi 还是 Claude。`id` 在那个后端内部稳定。产品里的「话题 id」可以另外存，不要求等于这个原生 id。重启之后靠产品自己的表把两者对上。
+`backend` 区分是谁在跑。`id` 在那个后端里稳定，不必等于界面上的话题 id。产品自己记一张对照表。`partial` 为真时，界面把它当成还在流，和课 10 的活消息是同一信号。
 
-`RuntimeMessage` 仍是 `UIMessage`。所以界面课学的 `text`、`reasoning`、工具 part，在这条路上继续有效。额外的元数据只有三样：完整度、这次输入的 id、消息级错误。完整度是 `partial` 时，界面可以把它当成还在流。
+这个类型里没有窗口，没有数据库，也没有 HTTP。谁把 Pi 的原生事件收成 `RuntimeMessage`，是适配器的工作，课 29 再对名字。
 
-包里还有提交输入、中断、观察快照这些操作的类型。它们描述「能对一条线程做什么」，不包含「怎样去调一家厂商的 HTTP」。具体的 Pi 适配器实现这些操作，把原生事件翻译成契约里的事实。
+## 在 Cherry Studio 里
 
-这个包大约十个源文件，都是类型和观察流。读它的时候不会遇到窗口、数据库或 React。
-
-## 和 aiCore 的分工
-
-`aiCore` 回答：我们自己怎样把模型和工具循环跑起来。
-
-`agent-runtime` 回答：别人已经跑起来了，我们怎样观察它，并得到同样的消息。
-
-两条路在 `MessageList` 汇合。列表只认 parts。
+包是 `packages/agent-runtime`。`Thread` 用 `backendId` 和 `ThreadId`。`RuntimeMessage` 就是 AI SDK 的 `UIMessage`，外加完整度、输入 id 和错误。README 写明它不依赖 Electron，也不负责把 agent 跑起来。
 
 ## 接下来
 
-原生事件通常是一小段增量，不是整条消息替换。契约怎样表示「往第 3 块上追加几个字」，看 [文本增量](/runtime/text-delta)。
-
-源码：`packages/agent-runtime/README.md` 开头，以及 `src/contracts.ts` 的 `Thread` 与 `RuntimeMessage`。
+原生事件通常是几个新字，不是整条消息换掉。[26 只追加几个字](/runtime/text-delta) 规定编辑只有三种。

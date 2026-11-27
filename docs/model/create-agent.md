@@ -1,55 +1,56 @@
 ---
-title: createAgent
+title: 21 一个循环就够了
 prev:
-  text: 插件管道
+  text: 20 加能力只加一个函数
   link: /model/plugins
 next:
-  text: 主进程里的循环
+  text: 22 产品规则包在循环外
   link: /model/main-agent
 ---
 
-# createAgent
+# 21 一个循环就够了
 
-单次 `streamText` 停在模型的第一段回复上。回复如果是「请调用网页搜索」，聊天还没完。必须有人执行搜索，把结果放回消息，再请求模型，直到它写出给用户的正文。这个循环在 AI SDK 里叫 `ToolLoopAgent`。Cherry 的 `createAgent` 只负责把模型和工具准备好，然后把它 new 出来。
+> 这一课只加一件事：模型回复里还有工具调用，就执行，把结果送回去，再问一次。没有工具调用，就停。
 
-## 五步，函数不长
+## 问题
+
+`streamText` 停在第一段回复上。模型说「请调用 web_search」，聊天还没完。必须有人去搜，把结果放回消息，再请求模型，直到它写出给用户的那句话。
+
+## 最小做法
+
+一个循环。判断条件只有一个：这段回复里有没有工具调用。
 
 ```ts
-export async function createAgent(options) {
-  const { providerId, providerSettings, modelId, plugins, wrapModel, agentSettings } = options
+type Block =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; input: unknown }
 
-  // 1. 执行器：厂商 + 插件
-  const executor = await createExecutor(providerId, providerSettings, plugins)
+const messages: unknown[] = [{ role: 'user', content: '今天北京天气怎么样' }]
 
-  // 2. 把模型 id 解析成模型对象，中间件在这里已经套上
-  const resolvedModel = await executor.resolveLanguageModel(modelId)
+while (true) {
+  const reply = await streamText({ model, messages, tools })
+  messages.push({ role: 'assistant', content: reply.blocks })
 
-  // 3. 让插件改 agent 的设置
-  const transformedSettings = await executor.pluginEngine.transformAgentSettings(resolvedModel, agentSettings)
+  const calls = reply.blocks.filter((block) => block.type === 'tool')
+  if (calls.length === 0) break
 
-  // 4. 最外层还可以再包一层，例如换 Key 重试
-  const finalModel = wrapModel ? await wrapModel(resolvedModel) : resolvedModel
-
-  // 5. 循环从这里开始，由 SDK 跑
-  return new ToolLoopAgent({
-    ...transformedSettings,
-    model: finalModel
-  })
+  const results = []
+  for (const call of calls) {
+    const output = await runTool(call.name, call.input)
+    results.push({ type: 'tool-result', id: call.id, output })
+  }
+  messages.push({ role: 'tool', content: results })
 }
 ```
 
-第 3 步的注释是这个文件里最值得留下的一句：`ToolLoopAgent` 会拿着 settings 跑完整个循环，不会在每一轮再走进 `transformParams`。上一课那种「往 params 里塞工具」的插件，如果只在每轮请求时才运行，循环里的第二轮就看不见它。`transformAgentSettings` 是循环开始前的最后一次机会，把这些工具写进 agent 一直握着的设置。
+模型决定要不要搜、搜什么。循环只负责执行和把结果追加进去。没有规划器，没有状态机。思维过程就是模型写在回复里的那些块。
 
-`agentSettings` 里通常已经有业务传来的工具、系统提示、停止条件。插件是在此之上追加。`model` 不在 `agentSettings` 里，因为模型对象要等第 2 步才解析出来，第 5 步单独放进去。
+课 20 的插件如果只在每一轮 `streamText` 前运行，这个 `while` 的第二轮会看不见它们。所以创建循环之前，先把插件要加的工具写进 `tools`。循环开始后，`tools` 不再变。
 
-返回值是 SDK 的 agent，不是一段字符串。调用方再对它 `stream`，才得到窗口要画的 chunk。
+## 在 Cherry Studio 里
 
-## 循环本身不在这个文件
-
-`ToolLoopAgent` 的「有工具调用就执行并继续，没有就停」写在 `ai` 这个依赖里。Cherry 没有复制一份 while 循环。你要建立的直觉是：决策在模型，执行工具和把结果塞回消息在 SDK，厂商和插件在 `createAgent` 进入 SDK 之前准备好。
+这个 `while` 在依赖 `ai` 的 `ToolLoopAgent` 里，Cherry 没有再写一份。`createAgent` 做的是循环开始前的准备：解析模型，调用 `transformAgentSettings` 让插件改设置，然后 `new ToolLoopAgent({ ...settings, model })`。文件大约六十行，五步都是准备，第五步才把循环交出去。
 
 ## 接下来
 
-主进程还要加上系统提示、审批钩子和图片类工具结果的处理。那一层是 [主进程里的循环](/model/main-agent)。
-
-源码：`packages/aiCore/src/core/agents/createAgent.ts`，全文就这些。
+系统提示、温度、执行前的钩子是产品规则。[22 产品规则包在循环外](/model/main-agent) 把它们放进 `createAgent` 的参数。

@@ -1,36 +1,47 @@
 ---
-title: MCP
+title: 30 工具可以来自外部进程
 prev:
-  text: Pi 与 Claude Code
+  text: 29 两套循环
   link: /runtime/adapters
 next:
-  text: 知识库
+  text: 31 先建索引再当工具查
   link: /later/knowledge
 ---
 
-# MCP
+# 30 工具可以来自外部进程
 
-模型能用的工具不一定写在 Cherry 的仓库里。MCP 是一种协议：外部进程声明「我有这些工具」，客户端连上之后，把它们并进这一轮的工具列表。对模型来说，它们仍是「名字、参数、调用结果」。多出来的是调用要跨进程。
+> 这一课只认一件事：MCP 工具对模型来说仍是课 23 的说明加函数。函数的身体在另一个进程里。
 
-## 放回这条链上
+## 问题
 
-主进程的 `McpRuntimeService` 使用 `@modelcontextprotocol/client`。它维持连接，列出工具，在循环执行到某个 MCP 工具时转发 `CallTool`，再把结果写成工具 part。
+用户想让 agent 用一个你没写过的工具，比如他本机的笔记软件。你不可能把每个软件的 API 都做进仓库。
 
-工具名在界面上常带 `mcp__` 前缀。`chooseTool` 看到这个前缀，就走 MCP 卡片或通用的执行时间线，而不是网页搜索那张卡。卡片显示的参数和输出，来源是外部服务器，形状仍是工具 part。
+## 最小做法
 
-同目录可以这样认：
+启动时问外部进程要工具列表，把它们并进课 21 的 `tools`。执行时把参数转交出去，再把结果放进工具块。
 
-- `McpRuntimeService.ts`：连接和调用。
-- `McpCatalogService.ts`：用户配置了哪些服务器。
-- `createMcpBridgeServer.ts`：把 Cherry 自己的一些能力也桥成 MCP，给外部运行时用。
-- `servers/`：随应用带上的服务器，例如文件系统。
+```ts
+const remote = await mcp.listTools()
+const tools = Object.fromEntries(
+  remote.map((tool) => [
+    tool.name,
+    {
+      description: tool.description,
+      parameters: tool.parameters,
+      run: (input: unknown) => mcp.call(tool.name, input)
+    }
+  ])
+)
+```
 
-浏览器控制是另一条。`src/main/features/browser/mcp/` 让 agent 操作应用自己打开的页面。它也说 MCP 的语言，但是应用内的服务器，不是用户随手加的第三方进程。
+模型看见的仍是名字和说明。`run` 里面是一次跨进程调用。界面按名字画卡片，名字常常带 `mcp__` 前缀，用来和内置搜索区分。
 
-审批同样适用。外部工具能不能直接跑，仍走上一课那道门。协议没有让外部进程绕过用户的允许。
+课 27 的审批仍然有效。外部进程不能因为协议不同就绕过「先问一句」。
+
+## 在 Cherry Studio 里
+
+连接和调用在 `McpRuntimeService`，用的是 `@modelcontextprotocol/client`。服务器清单在 `McpCatalogService`。浏览器控制是应用自己开的一条 MCP，在 `src/main/features/browser/mcp/`，和用户添加的第三方进程不是同一条。
 
 ## 接下来
 
-知识库看起来也像工具，但它先要建索引。[知识库](/later/knowledge) 说明索引和调用是两段。
-
-源码：`src/main/ai/mcp/McpRuntimeService.ts`。
+知识库看起来也像工具，但它要先把资料处理好。[31 先建索引再当工具查](/later/knowledge)。

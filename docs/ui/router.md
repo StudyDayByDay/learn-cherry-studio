@@ -1,46 +1,61 @@
 ---
-title: 一个 Tab 一份路由
+title: 04 标签不丢状态
 prev:
-  text: 一条消息的全程
+  text: 03 一句话的旅程
   link: /map/one-message
 next:
-  text: 列表契约
+  text: 05 列表只收一个对象
   link: /ui/contract
 ---
 
-# 一个 Tab 一份路由
+# 04 标签不丢状态
 
-Cherry Studio 的窗口像浏览器：上面有一排标签，每个标签是一个页面。切走再切回来，原来的滚动位置和输入草稿还在。这不是把每个页面的 state 存进全局 store 再恢复，而是每个标签自己拿着一份路由器，页面组件一直挂着。
+> 这一课只加一件事：每个标签自己拿着一份路由，切走时页面不卸载。
 
-## 每个标签一份 MemoryRouter
+## 问题
 
-TanStack Router 在这里按文件生成路由。聊天页的参数是话题 id。文档里的写法就是项目里的写法：
+窗口上面有一排标签。你在话题 A 看到一半，点开设置，再点回来，希望滚动位置还在。如果全窗口共用一个路由器，一切标签，上一页就卸载了。
+
+## 最小做法
+
+每个标签一个内存路由器。路由状态不写地址栏，组件树也不拆。
 
 ```tsx
-import { createFileRoute } from '@tanstack/react-router'
+function Tab({ path }: { path: string }) {
+  return (
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/chat/:topicId" element={<ChatPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
 
-export const Route = createFileRoute('/chat/$topicId')({
-  component: ChatPage
-})
-
-function ChatPage() {
-  const { topicId } = Route.useParams()
-  return <div>Chat: {topicId}</div>
+function Window() {
+  const tabs = useTabs()
+  return tabs.map((tab) => (
+    <div key={tab.id} hidden={tab.id !== activeId}>
+      <Tab path={tab.path} />
+    </div>
+  ))
 }
 ```
 
-`/chat/$topicId` 的意思是：路径里有一段动态参数，组件里用 `Route.useParams()` 读出来。真实页面比这个例子大，但话题 id 的来源就是这一段。有了 `topicId`，页面才知道要哪一组消息。
+`hidden` 只是不显示。`ChatPage` 还挂着，里面的滚动和输入草稿还在。这就是 KeepAlive：保活靠的是不卸载，不是把 state 抄进全局 store 再恢复。
 
-每个标签用 MemoryRouter，路由状态放在内存里，不写进地址栏。标签 A 停在话题 1，标签 B 停在设置页，两份路由器互不覆盖。切标签只是显示另一棵已经挂着的树，所以滚动和草稿还在。这就是 README 里说的原生 KeepAlive。
+聊天页从路径里拿话题 id：
 
-开发时在 `src/renderer/routes/` 加一个文件，开发服务器会重新生成 `routeTree.gen.ts`。你不用手写整张路由表。
+```tsx
+const { topicId } = useParams()
+```
 
-## 路由不负责说话
+有了 `topicId`，才知道要哪一组消息。路由到此为止。它不保存模型正在吐的字。
 
-路由只回答「现在这个标签在看哪个话题」。它不保存流式文本，也不发起模型请求。消息从哪来、按钮点了做什么，是下一课的列表契约。页面把 `topicId` 交给数据层，数据层再把消息填进列表。
+## 在 Cherry Studio 里
+
+用的是 TanStack Router 的 `createFileRoute('/chat/$topicId')`，每个标签一份 MemoryRouter。在 `src/renderer/routes/` 加一个文件，开发服务器会生成路由表。
 
 ## 接下来
 
-同一个消息列表要给首页和 Agent 会话用。[列表契约](/ui/contract) 说明页面怎样把数据交进去，而不把「这是不是首页」写进组件。
-
-源码：`src/renderer/routes/README.md`，以及同目录下由文件生成的路由。
+同一个气泡列表要给首页和 Agent 会话共用。[05 列表只收一个对象](/ui/contract) 让组件不再写「这是不是首页」。
